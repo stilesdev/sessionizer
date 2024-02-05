@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/adrg/xdg"
@@ -65,7 +66,7 @@ var (
                  log.Fatalln(err)
             }
 
-            selected, err := io.ReadAll(stdout)
+            fzfResult, err := io.ReadAll(stdout)
             if err != nil {
                  log.Fatalln(err)
             }
@@ -74,7 +75,108 @@ var (
                 log.Fatalln(err)
             } 
 
-            fmt.Println("Selected option:", strings.TrimSpace(string(selected)))
+            selected := strings.TrimSpace(string(fzfResult))
+            fmt.Println("Selected option:", selected)
+
+            // TODO: detect which type of option was selected before running this - file paths only are supported for now
+            sessionName := filepath.Base(selected)
+
+
+
+
+            
+            if _, err := exec.LookPath("tmux"); err != nil {
+                log.Fatalln("tmux is not installed or could not be found in $PATH")
+            }
+
+            inTmux := os.Getenv("TMUX") != ""
+
+            tmux := exec.Command("tmux", "list-sessions", "-F", "#{session_name} #{session_path} #{session_attached}")
+            fmt.Println(tmux.String())
+            sessionOut, err := tmux.StdoutPipe()
+            if err != nil {
+                 log.Fatalln(err)
+            }
+
+            sessionErr, err := tmux.StderrPipe()
+            if err != nil {
+                 log.Fatalln(err)
+            }
+
+            if err = tmux.Start(); err != nil {
+                log.Fatalln(err)
+            }
+
+            sessionOutContents, err := io.ReadAll(sessionOut)
+            if err != nil {
+                log.Fatalln(err)
+            }
+
+            sessionErrContents, err := io.ReadAll(sessionErr)
+            if err != nil {
+                log.Fatalln(err)
+            }
+
+            tmuxRunning := true
+            err = tmux.Wait()
+            if err != nil {
+                // error could be caused by tmux server not running, which is okay as this will create a new session next. Check stderr for "no server running" message
+                sessionErrOutputString := strings.TrimSpace(string(sessionErrContents))
+                if strings.Contains(sessionErrOutputString, "no server running") {
+                    // tmux server not running, remember this so it can skip parsing this command's output later
+                    tmuxRunning = false
+                } else {
+                    log.Fatalln(err)
+                }
+            }
+
+            sessions := strings.TrimSpace(string(sessionOutContents))
+
+            var existingSession string
+
+            if tmuxRunning {
+                for _, session := range strings.Split(string(sessions), "\n") {
+                    split := strings.Split(session, " ")
+                    name := split[0]
+                    path := split[1]
+                    attached := split[2] == "1"
+
+                    if sessionName == name {
+                        fmt.Printf("Found existing session with name: %v, path: %v, isAttached: %v\n", name, path, attached)
+                        existingSession = name
+                        break
+                    }
+                }
+            }
+
+            if existingSession == "" {
+                fmt.Println("Creating new session")
+                // selected session does not exist, create it now
+                createSession := exec.Command("tmux", "new-session", "-d", "-s", sessionName, "-c", selected)
+                fmt.Println(createSession.String())
+                if err = createSession.Run(); err != nil {
+                    log.Fatalln(err)
+                }
+                existingSession = sessionName
+            }
+            
+            if inTmux {
+                // switch to session
+                cmd := exec.Command("tmux", "switch-client", "-t", existingSession)
+                fmt.Println(cmd.String())
+                cmd.Stdin = os.Stdin
+                cmd.Stdout = os.Stdout
+                cmd.Stderr = os.Stderr
+                cmd.Run()
+            } else {
+                // attach to session
+                cmd := exec.Command("tmux", "attach", "-t", existingSession)
+                fmt.Println(cmd.String())
+                cmd.Stdin = os.Stdin
+                cmd.Stdout = os.Stdout
+                cmd.Stderr = os.Stderr
+                cmd.Run()
+            }
         },
     }
 )
@@ -86,7 +188,7 @@ func Execute() error {
 func init() {
     cobra.OnInitialize(initConfig)
 
-    rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", fmt.Sprintf("config file (default: %s/sessionizer/config.toml)", xdg.ConfigHome))
+    rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", fmt.Sprintf("config file (default: %v/sessionizer/config.toml)", xdg.ConfigHome))
 }
 
 func initConfig() {

@@ -26,6 +26,10 @@ var (
             localDirs := viper.GetStringSlice("localDirs")
 
             for _, localDir := range localDirs {
+                if strings.HasPrefix(localDir, "~/") {
+                    localDir = filepath.Join(xdg.Home, localDir[2:])
+                }
+
                 files, err := os.ReadDir(localDir)
                 if err != nil {
                     log.Fatalln(err)
@@ -33,7 +37,7 @@ var (
 
                 for _, file := range files {
                     if file.IsDir() {
-                        fuzzyFindEntries = append(fuzzyFindEntries, localDir + "/" + file.Name())
+                        fuzzyFindEntries = append(fuzzyFindEntries, filepath.Join(localDir, file.Name()))
                     }
                 }
             }

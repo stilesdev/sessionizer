@@ -12,13 +12,8 @@ import (
 	"github.com/adrg/xdg"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"github.com/stilesdev/sessionizer/multiplexers/tmux"
 )
-
-type TmuxSession struct {
-    Name string
-    Path string
-    Attached bool
-}
 
 var (
     cfgFile string
@@ -95,86 +90,38 @@ var (
 
 
             
-            if _, err := exec.LookPath("tmux"); err != nil {
+            if !tmux.IsTmuxAvailable() {
                 log.Fatalln("tmux is not installed or could not be found in $PATH")
             }
 
-            inTmux := os.Getenv("TMUX") != ""
-
-            tmux := exec.Command("tmux", "list-sessions", "-F", "#{session_name} #{session_path} #{session_attached}")
-            fmt.Println(tmux.String())
-            sessionOut, err := tmux.StdoutPipe()
-            if err != nil {
-                 log.Fatalln(err)
-            }
-            tmux.Stderr = os.Stderr
-
-            if err = tmux.Start(); err != nil {
-                log.Fatalln(err)
-            }
-
-            sessionOutContents, err := io.ReadAll(sessionOut)
+            existingSessions, err := tmux.ListExistingSessions()
             if err != nil {
                 log.Fatalln(err)
             }
 
-            var existingSession TmuxSession
-            var existingSessions []TmuxSession
+            var session tmux.TmuxSession
 
-            err = tmux.Wait()
-            if err == nil {
-                sessions := strings.TrimSpace(string(sessionOutContents))
-
-                for _, sessionString := range strings.Split(string(sessions), "\n") {
-                    split := strings.Split(sessionString, " ")
-                    if len(split) == 3 {
-                        session := TmuxSession{
-                            Name: split[0],
-                            Path: split[1],
-                            Attached: split[2] == "1",
-                        }
-                        existingSessions = append(existingSessions, session)
-                         
-                        if session.Name == sessionName {
-                            fmt.Printf("Found existing session with name: %v, path: %v, isAttached: %v\n", session.Name, session.Path, session.Attached)
-                            existingSession = session
-                            break
-                        }
-                    }
+            for _, existingSession := range existingSessions {
+                if existingSession.Name == sessionName {
+                    session = existingSession
                 }
             }
 
-            if existingSession.Name == "" {
-                fmt.Println("Creating new session")
+            if session.Name == "" {
                 // selected session does not exist, create it now
-                createSession := exec.Command("tmux", "new-session", "-d", "-s", sessionName, "-c", selected)
-                fmt.Println(createSession.String())
-                if err = createSession.Run(); err != nil {
-                    log.Fatalln(err)
-                }
-                existingSession = TmuxSession{
+                session = tmux.TmuxSession{
                     Name: sessionName,
                     Path: selected,
                     Attached: false,
                 }
+
+                tmux.CreateNewSession(session)
             }
             
-            if inTmux {
-                // switch to session
-                cmd := exec.Command("tmux", "switch-client", "-t", existingSession.Name)
-                fmt.Println(cmd.String())
-                cmd.Stdin = os.Stdin
-                cmd.Stdout = os.Stdout
-                cmd.Stderr = os.Stderr
-                cmd.Run()
+            if tmux.IsInTmux() {
+                tmux.SwitchToSession(session)
             } else {
-                // attach to session
-                cmd := exec.Command("tmux", "attach", "-t", existingSession.Name)
-                fmt.Println(cmd.String())
-                cmd.Stdin = os.Stdin
-                cmd.Stdout = os.Stdout
-                cmd.Stderr = os.Stderr
-                cmd.Run()
+                tmux.AttachToSession(session)
             }
         },
     }

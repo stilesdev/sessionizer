@@ -101,11 +101,7 @@ var (
             if err != nil {
                  log.Fatalln(err)
             }
-
-            sessionErr, err := tmux.StderrPipe()
-            if err != nil {
-                 log.Fatalln(err)
-            }
+            tmux.Stderr = os.Stderr
 
             if err = tmux.Start(); err != nil {
                 log.Fatalln(err)
@@ -116,29 +112,12 @@ var (
                 log.Fatalln(err)
             }
 
-            sessionErrContents, err := io.ReadAll(sessionErr)
-            if err != nil {
-                log.Fatalln(err)
-            }
-
-            tmuxRunning := true
-            err = tmux.Wait()
-            if err != nil {
-                // error could be caused by tmux server not running, which is okay as this will create a new session next. Check stderr for "no server running" message
-                sessionErrOutputString := strings.TrimSpace(string(sessionErrContents))
-                if strings.Contains(sessionErrOutputString, "no server running") {
-                    // tmux server not running, remember this so it can skip parsing this command's output later
-                    tmuxRunning = false
-                } else {
-                    log.Fatalln(err)
-                }
-            }
-
-            sessions := strings.TrimSpace(string(sessionOutContents))
-
             var existingSession string
 
-            if tmuxRunning {
+            err = tmux.Wait()
+            if err == nil {
+                sessions := strings.TrimSpace(string(sessionOutContents))
+
                 for _, session := range strings.Split(string(sessions), "\n") {
                     split := strings.Split(session, " ")
                     name := split[0]

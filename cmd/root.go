@@ -14,6 +14,12 @@ import (
 	"github.com/spf13/viper"
 )
 
+type TmuxSession struct {
+    Name string
+    Path string
+    Attached bool
+}
+
 var (
     cfgFile string
 
@@ -112,27 +118,33 @@ var (
                 log.Fatalln(err)
             }
 
-            var existingSession string
+            var existingSession TmuxSession
+            var existingSessions []TmuxSession
 
             err = tmux.Wait()
             if err == nil {
                 sessions := strings.TrimSpace(string(sessionOutContents))
 
-                for _, session := range strings.Split(string(sessions), "\n") {
-                    split := strings.Split(session, " ")
-                    name := split[0]
-                    path := split[1]
-                    attached := split[2] == "1"
-
-                    if sessionName == name {
-                        fmt.Printf("Found existing session with name: %v, path: %v, isAttached: %v\n", name, path, attached)
-                        existingSession = name
-                        break
+                for _, sessionString := range strings.Split(string(sessions), "\n") {
+                    split := strings.Split(sessionString, " ")
+                    if len(split) == 3 {
+                        session := TmuxSession{
+                            Name: split[0],
+                            Path: split[1],
+                            Attached: split[2] == "1",
+                        }
+                        existingSessions = append(existingSessions, session)
+                         
+                        if session.Name == sessionName {
+                            fmt.Printf("Found existing session with name: %v, path: %v, isAttached: %v\n", session.Name, session.Path, session.Attached)
+                            existingSession = session
+                            break
+                        }
                     }
                 }
             }
 
-            if existingSession == "" {
+            if existingSession.Name == "" {
                 fmt.Println("Creating new session")
                 // selected session does not exist, create it now
                 createSession := exec.Command("tmux", "new-session", "-d", "-s", sessionName, "-c", selected)
@@ -140,12 +152,16 @@ var (
                 if err = createSession.Run(); err != nil {
                     log.Fatalln(err)
                 }
-                existingSession = sessionName
+                existingSession = TmuxSession{
+                    Name: sessionName,
+                    Path: selected,
+                    Attached: false,
+                }
             }
             
             if inTmux {
                 // switch to session
-                cmd := exec.Command("tmux", "switch-client", "-t", existingSession)
+                cmd := exec.Command("tmux", "switch-client", "-t", existingSession.Name)
                 fmt.Println(cmd.String())
                 cmd.Stdin = os.Stdin
                 cmd.Stdout = os.Stdout
@@ -153,7 +169,7 @@ var (
                 cmd.Run()
             } else {
                 // attach to session
-                cmd := exec.Command("tmux", "attach", "-t", existingSession)
+                cmd := exec.Command("tmux", "attach", "-t", existingSession.Name)
                 fmt.Println(cmd.String())
                 cmd.Stdin = os.Stdin
                 cmd.Stdout = os.Stdout

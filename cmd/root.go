@@ -47,7 +47,8 @@ var (
                 log.Fatalln("fzf is not installed or could not be found in $PATH")
             }
 
-            fzf := exec.Command("fzf")
+            // TODO: figure out how to dynamically change prompt or something to indicate that a generic session will be created with the entered query as the name
+            fzf := exec.Command("fzf", "--exact", "--print-query")
             stdin, err := fzf.StdinPipe()
             if err != nil {
                  log.Fatalln(err)
@@ -77,14 +78,28 @@ var (
             }
 
             if err = fzf.Wait(); err != nil {
-                log.Fatalln(err)
+                // fzf still returns a non-zero exit code when nothing selected, but need to ignore that so this can still read the entered query and create a generic session
+                //log.Fatalln(err)
             } 
 
             selected := strings.TrimSpace(string(fzfResult))
-            fmt.Println("Selected option:", selected)
 
-            // TODO: detect which type of option was selected before running this - file paths only are supported for now
-            sessionName := filepath.Base(selected)
+            var sessionName string
+            var sessionPath string
+
+            lines := strings.Split(string(fzfResult), "\n")
+            fmt.Println("Split result:", lines, len(lines))
+            if len(lines) == 2 {
+                fmt.Println("Create new generic session with name:", lines[0])
+                sessionName = lines[0]
+                sessionPath = xdg.Home
+            } else if len(lines) == 3 {
+                fmt.Println("Selected entry from list:", selected)
+                sessionName = filepath.Base(selected)
+                sessionPath = lines[1]
+            } else {
+                log.Fatalln("Invalid result returned from fzf")
+            }
 
 
 
@@ -111,7 +126,7 @@ var (
                 // selected session does not exist, create it now
                 session = tmux.TmuxSession{
                     Name: sessionName,
-                    Path: selected,
+                    Path: sessionPath,
                     Attached: false,
                 }
 

@@ -37,7 +37,7 @@ func Prompt(options []string) (string, string, error) {
         return "", "", err
     }
 
-    _, err = io.WriteString(stdin, strings.Join(options, "\n"))
+    _, err = io.WriteString(stdin, strings.Join(options, "\n") + "\n")
     if err != nil {
         return "", "", err
     }

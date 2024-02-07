@@ -18,7 +18,7 @@ func IsAvailable() bool {
 
 func Prompt(options []string) (string, string, error) {
     // TODO: figure out how to dynamically change prompt or something to indicate that a generic session will be created with the entered query as the name
-    fzf := exec.Command("fzf", "--exact", "--print-query")
+    fzf := exec.Command("fzf", "--exact", "--print-query", "--no-sort", "--tac", "--cycle")
     stdin, err := fzf.StdinPipe()
     if err != nil {
         return "", "", err

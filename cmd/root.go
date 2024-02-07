@@ -42,6 +42,32 @@ var (
                 }
             }
 
+            if !tmux.IsTmuxAvailable() {
+                log.Fatalln("tmux is not installed or could not be found in $PATH")
+            }
+
+            existingSessions, err := tmux.ListExistingSessions()
+            if err != nil {
+                log.Fatalln(err)
+            }
+
+            tmuxEntryPrefix := "tmux: "
+            var existingSessionEntries []string
+            for _, existingSession := range existingSessions {
+                sessionIsProject := false
+                for _, entry := range fuzzyFindEntries {
+                    if existingSession.Path == entry {
+                        sessionIsProject = true
+                    }
+                }
+
+                // TODO: config setting for whether to include attached sessions?
+                if !sessionIsProject && !existingSession.Attached {
+                    existingSessionEntries = append(existingSessionEntries, tmuxEntryPrefix + existingSession.Name)
+                }
+            }
+
+            fuzzyFindEntries = append(fuzzyFindEntries, existingSessionEntries...)
 
 
 
@@ -59,8 +85,13 @@ var (
 
             if selectedOption != "" {
                 fmt.Println("Selected entry from list:", selectedOption)
-                sessionName = filepath.Base(selectedOption)
-                sessionPath = selectedOption
+
+                var isTmuxSession bool
+                sessionName, isTmuxSession = strings.CutPrefix(selectedOption, tmuxEntryPrefix)
+                if !isTmuxSession {
+                    sessionName = filepath.Base(selectedOption)
+                    sessionPath = selectedOption
+                }
             } else {
                 fmt.Println("Create new generic session with name:", enteredQuery)
                 sessionName = enteredQuery
@@ -71,15 +102,6 @@ var (
 
 
             
-            if !tmux.IsTmuxAvailable() {
-                log.Fatalln("tmux is not installed or could not be found in $PATH")
-            }
-
-            existingSessions, err := tmux.ListExistingSessions()
-            if err != nil {
-                log.Fatalln(err)
-            }
-
             var session tmux.TmuxSession
 
             for _, existingSession := range existingSessions {

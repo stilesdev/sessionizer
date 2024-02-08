@@ -51,9 +51,9 @@ var (
                     if file.IsDir() {
                         fullPath := filepath.Join(localDir, file.Name())
                         excludeDir := false
-                        if hideAttachedSessions {
+                        if !hideExistingSessionsMatchingLocalPath {
                             for _, existingSession := range existingSessions {
-                                if existingSession.Path == fullPath && existingSession.Attached {
+                                if existingSession.Path == fullPath {
                                     excludeDir = true
                                 }
                             }

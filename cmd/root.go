@@ -51,18 +51,22 @@ var (
                 log.Fatalln(err)
             }
 
+            hideExistingSessionsMatchingLocalPath := viper.GetBool("tmux.hideExistingSessionsMatchingLocalPath")
             tmuxEntryPrefix := "tmux: "
             var existingSessionEntries []string
             for _, existingSession := range existingSessions {
-                sessionIsProject := false
-                for _, entry := range fuzzyFindEntries {
-                    if existingSession.Path == entry {
-                        sessionIsProject = true
+                excludeSession := false
+
+                if hideExistingSessionsMatchingLocalPath {
+                    for _, entry := range fuzzyFindEntries {
+                        if existingSession.Path == entry {
+                            excludeSession = true
+                        }
                     }
                 }
 
                 // TODO: config setting for whether to include attached sessions?
-                if !sessionIsProject && !existingSession.Attached {
+                if !excludeSession && !existingSession.Attached {
                     existingSessionEntries = append(existingSessionEntries, tmuxEntryPrefix + existingSession.Name)
                 }
             }

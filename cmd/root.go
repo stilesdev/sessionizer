@@ -23,6 +23,18 @@ var (
         Run: func(cmd *cobra.Command, args []string) {
             var fuzzyFindEntries []string
 
+            if !tmux.IsTmuxAvailable() {
+                log.Fatalln("tmux is not installed or could not be found in $PATH")
+            }
+
+            existingSessions, err := tmux.ListExistingSessions()
+            if err != nil {
+                log.Fatalln(err)
+            }
+
+            hideAttachedSessions := viper.GetBool("tmux.hideAttachedSessions")
+            hideExistingSessionsMatchingLocalPath := viper.GetBool("tmux.hideExistingSessionsMatchingLocalPath")
+
             localDirs := viper.GetStringSlice("localDirs")
 
             for _, localDir := range localDirs {
@@ -37,27 +49,33 @@ var (
 
                 for _, file := range files {
                     if file.IsDir() {
-                        fuzzyFindEntries = append(fuzzyFindEntries, filepath.Join(localDir, file.Name()))
+                        fullPath := filepath.Join(localDir, file.Name())
+                        excludeDir := false
+                        if hideAttachedSessions {
+                            for _, existingSession := range existingSessions {
+                                if existingSession.Path == fullPath && existingSession.Attached {
+                                    excludeDir = true
+                                }
+                            }
+                        }
+
+                        if !excludeDir {
+                            fuzzyFindEntries = append(fuzzyFindEntries, fullPath)
+                        }
                     }
                 }
             }
 
-            if !tmux.IsTmuxAvailable() {
-                log.Fatalln("tmux is not installed or could not be found in $PATH")
-            }
-
-            existingSessions, err := tmux.ListExistingSessions()
-            if err != nil {
-                log.Fatalln(err)
-            }
-
-            hideExistingSessionsMatchingLocalPath := viper.GetBool("tmux.hideExistingSessionsMatchingLocalPath")
             tmuxEntryPrefix := "tmux: "
             var existingSessionEntries []string
             for _, existingSession := range existingSessions {
                 excludeSession := false
 
-                if hideExistingSessionsMatchingLocalPath {
+                if hideAttachedSessions && existingSession.Attached {
+                    excludeSession = true
+                }
+
+                if !excludeSession && hideExistingSessionsMatchingLocalPath {
                     for _, entry := range fuzzyFindEntries {
                         if existingSession.Path == entry {
                             excludeSession = true
@@ -65,8 +83,7 @@ var (
                     }
                 }
 
-                // TODO: config setting for whether to include attached sessions?
-                if !excludeSession && !existingSession.Attached {
+                if !excludeSession {
                     existingSessionEntries = append(existingSessionEntries, tmuxEntryPrefix + existingSession.Name)
                 }
             }

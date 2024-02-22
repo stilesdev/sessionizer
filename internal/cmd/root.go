@@ -7,15 +7,25 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/BurntSushi/toml"
 	"github.com/adrg/xdg"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
-	"github.com/stilesdev/sessionizer/internal/tmux"
 	"github.com/stilesdev/sessionizer/internal/fzf"
+	"github.com/stilesdev/sessionizer/internal/tmux"
 )
+
+type TmuxConfig struct {
+    HideAttachedSessions bool
+}
+
+type Config struct {
+    Tmux TmuxConfig
+    LocalDirs []string
+}
 
 var (
     cfgFile string
+    config Config
 
     rootCmd = &cobra.Command{
         Use: "sessionizer",
@@ -32,11 +42,7 @@ var (
                 log.Fatalln(err)
             }
 
-            hideAttachedSessions := viper.GetBool("tmux.hideAttachedSessions")
-
-            localDirs := viper.GetStringSlice("localDirs")
-
-            for _, localDir := range localDirs {
+            for _, localDir := range config.LocalDirs {
                 if strings.HasPrefix(localDir, "~/") {
                     localDir = filepath.Join(xdg.Home, localDir[2:])
                 }
@@ -69,7 +75,7 @@ var (
             for _, existingSession := range existingSessions {
                 excludeSession := false
 
-                if hideAttachedSessions && existingSession.Attached {
+                if config.Tmux.HideAttachedSessions && existingSession.Attached {
                     excludeSession = true
                 }
 
@@ -163,15 +169,13 @@ func initConfig() {
         cobra.CheckErr(err)
     }
 
-    viper.SetConfigFile(cfgFile)
-    viper.SetConfigType("toml")
-
-    if err := viper.ReadInConfig(); err == nil {
-        fmt.Println("Using config file:", viper.ConfigFileUsed())
+    if _, err := toml.DecodeFile(cfgFile, &config); err == nil {
+        fmt.Println("Using config file:", cfgFile)
+        fmt.Printf("%+v\n", config)
     } else {
         fmt.Println("Error:", err)
 
         // not able to load config, set defaults for anything required here:
-        viper.Set("localDirs", []string{xdg.Home})
+        config.LocalDirs = []string{xdg.Home}
     }
 }

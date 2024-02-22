@@ -10,8 +10,8 @@ import (
 	"github.com/adrg/xdg"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"github.com/stilesdev/sessionizer/multiplexers/tmux"
-	"github.com/stilesdev/sessionizer/prompts/fzf"
+	"github.com/stilesdev/sessionizer/internal/multiplexers/tmux"
+	"github.com/stilesdev/sessionizer/internal/prompts/fzf"
 )
 
 var (
@@ -84,7 +84,7 @@ var (
                 }
 
                 if !excludeSession {
-                    existingSessionEntries = append(existingSessionEntries, tmuxEntryPrefix + existingSession.Name)
+                    existingSessionEntries = append(existingSessionEntries, tmuxEntryPrefix + existingSession.Name + " [" + existingSession.Path + "]")
                 }
             }
 
@@ -109,7 +109,12 @@ var (
 
                 var isTmuxSession bool
                 sessionName, isTmuxSession = strings.CutPrefix(selectedOption, tmuxEntryPrefix)
-                if !isTmuxSession {
+                if isTmuxSession {
+                    pathDelimIndex := strings.Index(sessionName, " [")
+                    if pathDelimIndex > 0 {
+                        sessionName = sessionName[:pathDelimIndex]
+                    }
+                } else {
                     sessionName = filepath.Base(selectedOption)
                     sessionPath = selectedOption
                 }

@@ -33,7 +33,6 @@ var (
             }
 
             hideAttachedSessions := viper.GetBool("tmux.hideAttachedSessions")
-            hideExistingSessionsMatchingLocalPath := viper.GetBool("tmux.hideExistingSessionsMatchingLocalPath")
 
             localDirs := viper.GetStringSlice("localDirs")
 
@@ -51,11 +50,10 @@ var (
                     if file.IsDir() {
                         fullPath := filepath.Join(localDir, file.Name())
                         excludeDir := false
-                        if !hideExistingSessionsMatchingLocalPath {
-                            for _, existingSession := range existingSessions {
-                                if existingSession.Path == fullPath {
-                                    excludeDir = true
-                                }
+
+                        for _, existingSession := range existingSessions {
+                            if existingSession.Path == fullPath {
+                                excludeDir = true
                             }
                         }
 
@@ -73,14 +71,6 @@ var (
 
                 if hideAttachedSessions && existingSession.Attached {
                     excludeSession = true
-                }
-
-                if !excludeSession && hideExistingSessionsMatchingLocalPath {
-                    for _, entry := range fuzzyFindEntries {
-                        if existingSession.Path == entry {
-                            excludeSession = true
-                        }
-                    }
                 }
 
                 if !excludeSession {

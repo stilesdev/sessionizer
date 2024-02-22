@@ -10,8 +10,8 @@ import (
 	"github.com/adrg/xdg"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"github.com/stilesdev/sessionizer/internal/multiplexers/tmux"
-	"github.com/stilesdev/sessionizer/internal/prompts/fzf"
+	"github.com/stilesdev/sessionizer/internal/tmux"
+	"github.com/stilesdev/sessionizer/internal/fzf"
 )
 
 var (

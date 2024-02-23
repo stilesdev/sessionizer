@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -14,13 +13,48 @@ import (
 	"github.com/stilesdev/sessionizer/internal/tmux"
 )
 
+type SessionsConfig struct {
+    Path string
+    Paths []string
+}
+
 type TmuxConfig struct {
     HideAttachedSessions bool
 }
 
 type Config struct {
+    Sessions []SessionsConfig
     Tmux TmuxConfig
-    LocalDirs []string
+}
+
+func parseGlobToPaths(glob string) ([]string) {
+    var paths []string
+
+    if strings.HasPrefix(glob, "~/") {
+        glob = filepath.Join(xdg.Home, glob[2:])
+    }
+
+    matches, err := filepath.Glob(glob)
+    if err != nil {
+        fmt.Println("Unable to parse glob:", glob)
+        return paths
+    }
+
+    for _, path := range matches {
+        paths = append(paths, path)
+    }
+
+    return paths
+}
+
+func tmuxSessionExists(path string, existingSessions []tmux.TmuxSession) bool {
+    for _, existingSession := range existingSessions {
+        if existingSession.Path == path {
+            return true
+        }
+    }
+    
+    return false
 }
 
 var (
@@ -42,29 +76,21 @@ var (
                 log.Fatalln(err)
             }
 
-            for _, localDir := range config.LocalDirs {
-                if strings.HasPrefix(localDir, "~/") {
-                    localDir = filepath.Join(xdg.Home, localDir[2:])
-                }
-
-                files, err := os.ReadDir(localDir)
-                if err != nil {
-                    log.Fatalln(err)
-                }
-
-                for _, file := range files {
-                    if file.IsDir() {
-                        fullPath := filepath.Join(localDir, file.Name())
-                        excludeDir := false
-
-                        for _, existingSession := range existingSessions {
-                            if existingSession.Path == fullPath {
-                                excludeDir = true
-                            }
+            for _, sessionConfig := range config.Sessions {
+                if sessionConfig.Path != "" {
+                    for _, path := range parseGlobToPaths(sessionConfig.Path) {
+                        if !tmuxSessionExists(path, existingSessions) {
+                            fuzzyFindEntries = append(fuzzyFindEntries, path)
                         }
+                    }
+                }
 
-                        if !excludeDir {
-                            fuzzyFindEntries = append(fuzzyFindEntries, fullPath)
+                if len(sessionConfig.Paths) > 0 {
+                    for _, glob := range sessionConfig.Paths {
+                        for _, path := range parseGlobToPaths(glob) {
+                            if !tmuxSessionExists(path, existingSessions) {
+                                fuzzyFindEntries = append(fuzzyFindEntries, path)
+                            }
                         }
                     }
                 }
@@ -176,6 +202,9 @@ func initConfig() {
         fmt.Println("Error:", err)
 
         // not able to load config, set defaults for anything required here:
-        config.LocalDirs = []string{xdg.Home}
+        defaultSessionConfig := SessionsConfig{
+            Path: filepath.Join(xdg.Home, "*"),
+        }
+        config.Sessions = append(config.Sessions, defaultSessionConfig)
     }
 }

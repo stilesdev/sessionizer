@@ -3,7 +3,9 @@ package cmd
 import (
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -27,14 +29,19 @@ type Config struct {
     Tmux TmuxConfig
 }
 
+type Session struct {
+    Path string
+    Name string
+    FzfEntry string
+    Exists bool
+    IsScratch bool
+    IsAttached bool
+}
+
 func parseGlobToPaths(glob string) ([]string) {
     var paths []string
 
-    if strings.HasPrefix(glob, "~/") {
-        glob = filepath.Join(xdg.Home, glob[2:])
-    }
-
-    matches, err := filepath.Glob(glob)
+    matches, err := filepath.Glob(expandHome(glob))
     if err != nil {
         fmt.Println("Unable to parse glob:", glob)
         return paths
@@ -57,6 +64,63 @@ func tmuxSessionExists(path string, existingSessions []tmux.TmuxSession) bool {
     return false
 }
 
+func expandHome(path string) string {
+    if strings.HasPrefix(path, "~" + string(os.PathSeparator)) {
+        return filepath.Join(xdg.Home, path[2:])
+    }
+
+    return path
+}
+
+func unexpandHome(path string) string {
+    if strings.HasPrefix(path, xdg.Home) {
+        return filepath.Join("~", path[len(xdg.Home):])
+    }
+
+    return path
+}
+
+func parseSession(path string, existingTmuxSessions []tmux.TmuxSession) Session {
+    session := Session{
+        Path: path,
+        Name: filepath.Base(path),
+        FzfEntry: unexpandHome(path),
+    }
+
+    for _, tmuxSession := range existingTmuxSessions {
+        if tmuxSession.Path == path && tmuxSession.Name == session.Name {
+            session.FzfEntry = fmt.Sprintf("tmux: %s [%s]", session.Name, unexpandHome(path))
+            session.Exists = true
+            session.IsAttached = tmuxSession.Attached
+            break
+        }
+    }
+
+    return session
+}
+
+func sortSessions(sessions *[]Session) {
+    slices.SortStableFunc(*sessions, func(a Session, b Session) int {
+        if a.IsScratch != b.IsScratch {
+            if a.IsScratch {
+                return 1
+            } else {
+                return -1
+            }
+        }
+
+        if a.Exists != b.Exists {
+            if a.Exists {
+                return 1
+            } else {
+                return -1
+            }
+        }
+
+        return 0
+    })
+}
+
 var (
     cfgFile string
     config Config
@@ -65,13 +129,13 @@ var (
         Use: "sessionizer",
         Short: "A smart terminal session manager",
         Run: func(cmd *cobra.Command, args []string) {
-            var fuzzyFindEntries []string
+            var sessions []Session
 
             if !tmux.IsTmuxAvailable() {
                 log.Fatalln("tmux is not installed or could not be found in $PATH")
             }
 
-            existingSessions, err := tmux.ListExistingSessions()
+            existingTmuxSessions, err := tmux.ListExistingSessions()
             if err != nil {
                 log.Fatalln(err)
             }
@@ -79,38 +143,47 @@ var (
             for _, sessionConfig := range config.Sessions {
                 if sessionConfig.Path != "" {
                     for _, path := range parseGlobToPaths(sessionConfig.Path) {
-                        if !tmuxSessionExists(path, existingSessions) {
-                            fuzzyFindEntries = append(fuzzyFindEntries, path)
-                        }
+                        sessions = append(sessions, parseSession(path, existingTmuxSessions))
                     }
                 }
 
                 if len(sessionConfig.Paths) > 0 {
                     for _, glob := range sessionConfig.Paths {
                         for _, path := range parseGlobToPaths(glob) {
-                            if !tmuxSessionExists(path, existingSessions) {
-                                fuzzyFindEntries = append(fuzzyFindEntries, path)
-                            }
+                            sessions = append(sessions, parseSession(path, existingTmuxSessions))
                         }
                     }
                 }
             }
 
-            tmuxEntryPrefix := "tmux: "
-            var existingSessionEntries []string
-            for _, existingSession := range existingSessions {
+            for _, existingSession := range existingTmuxSessions {
                 excludeSession := false
 
+                // exclude if attached and configured to hide attached sessions
                 if config.Tmux.HideAttachedSessions && existingSession.Attached {
                     excludeSession = true
                 }
+                
+                // exclude if already included via paths - only looking for scratch sessions here
+                for _, session := range sessions {
+                    if existingSession.Name == session.Name && existingSession.Path == session.Path {
+                        excludeSession = true
+                        break
+                    }
+                }
 
                 if !excludeSession {
-                    existingSessionEntries = append(existingSessionEntries, tmuxEntryPrefix + existingSession.Name + " [" + existingSession.Path + "]")
+                    sessions = append(sessions, Session{
+                        Path: existingSession.Path,
+                        Name: existingSession.Name,
+                        FzfEntry: fmt.Sprintf("scratch: %s", existingSession.Name),
+                        Exists: true,
+                        IsAttached: existingSession.Attached,
+                        IsScratch: true,
+                    })
                 }
             }
 
-            fuzzyFindEntries = append(fuzzyFindEntries, existingSessionEntries...)
 
 
 
@@ -118,61 +191,55 @@ var (
                 log.Fatalln("fzf is not installed or could not be found in $PATH")
             }
 
-            selectedOption, enteredQuery, err := fzf.Prompt(fuzzyFindEntries)
+            sortSessions(&sessions)
+
+            fzfEntries := make([]string, len(sessions))
+            for idx, session := range sessions {
+                fzfEntries[idx] = session.FzfEntry
+            }
+
+            selectedIndex, _, enteredQuery, err := fzf.Prompt(fzfEntries)
             if err != nil {
                 log.Fatalln(err)
+            } else if selectedIndex < 0 && enteredQuery == "" {
+                // not an error, but no valid selection made
+                fmt.Println("user exited")
+                return
             }
 
-            var sessionName string
-            var sessionPath string
-
-            if selectedOption != "" {
-                fmt.Println("Selected entry from list:", selectedOption)
-
-                var isTmuxSession bool
-                sessionName, isTmuxSession = strings.CutPrefix(selectedOption, tmuxEntryPrefix)
-                if isTmuxSession {
-                    pathDelimIndex := strings.Index(sessionName, " [")
-                    if pathDelimIndex > 0 {
-                        sessionName = sessionName[:pathDelimIndex]
+            var tmuxSession tmux.TmuxSession
+            if selectedIndex >= 0 {
+                fmt.Printf("%#v\n", sessions[selectedIndex])
+                
+                if sessions[selectedIndex].Exists {
+                    for _, existingTmuxSession := range existingTmuxSessions {
+                        if existingTmuxSession.Name == sessions[selectedIndex].Name {
+                            tmuxSession = existingTmuxSession
+                        }
                     }
                 } else {
-                    sessionName = filepath.Base(selectedOption)
-                    sessionPath = selectedOption
+                    // session does not exist, create it now
+                    tmuxSession = tmux.TmuxSession{
+                        Name: sessions[selectedIndex].Name,
+                        Path: sessions[selectedIndex].Path,
+                    }
+
+                    tmux.CreateNewSession(tmuxSession)
                 }
             } else {
-                fmt.Println("Create new generic session with name:", enteredQuery)
-                sessionName = enteredQuery
-                sessionPath = xdg.Home
-            }
-
-
-
-
-            
-            var session tmux.TmuxSession
-
-            for _, existingSession := range existingSessions {
-                if existingSession.Name == sessionName {
-                    session = existingSession
-                }
-            }
-
-            if session.Name == "" {
-                // selected session does not exist, create it now
-                session = tmux.TmuxSession{
-                    Name: sessionName,
-                    Path: sessionPath,
-                    Attached: false,
+                // no selection, create scratch
+                tmuxSession = tmux.TmuxSession{
+                    Name: enteredQuery,
+                    Path: xdg.Home,
                 }
 
-                tmux.CreateNewSession(session)
+                tmux.CreateNewSession(tmuxSession)
             }
-            
+
             if tmux.IsInTmux() {
-                tmux.SwitchToSession(session)
+                tmux.SwitchToSession(tmuxSession)
             } else {
-                tmux.AttachToSession(session)
+                tmux.AttachToSession(tmuxSession)
             }
         },
     }

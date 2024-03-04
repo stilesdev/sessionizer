@@ -212,7 +212,9 @@ func parseGlobToPaths(glob string) ([]string) {
     }
 
     for _, path := range matches {
-        paths = append(paths, path)
+        if fileInfo, err := os.Stat(path); err == nil && fileInfo.IsDir() {
+            paths = append(paths, path)
+        }
     }
 
     return paths

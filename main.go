@@ -72,18 +72,23 @@ func main() {
                 return err
             }
 
-            // TODO: exclude path sessions when attached and configured to hide attached sessions
             for _, sessionConfig := range config.Sessions {
                 if sessionConfig.Path != "" {
                     for _, path := range parseGlobToPaths(sessionConfig.Path) {
-                        sessions = append(sessions, parseSession(path, existingTmuxSessions))
+                        session := parseSession(path, existingTmuxSessions)
+                        if !session.IsAttached || !config.Tmux.HideAttachedSessions {
+                            sessions = append(sessions, session)
+                        }
                     }
                 }
 
                 if len(sessionConfig.Paths) > 0 {
                     for _, glob := range sessionConfig.Paths {
                         for _, path := range parseGlobToPaths(glob) {
-                            sessions = append(sessions, parseSession(path, existingTmuxSessions))
+                            session := parseSession(path, existingTmuxSessions)
+                            if !session.IsAttached || !config.Tmux.HideAttachedSessions {
+                                sessions = append(sessions, session)
+                            }
                         }
                     }
                 }

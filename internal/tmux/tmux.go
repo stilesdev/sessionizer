@@ -1,6 +1,7 @@
 package tmux
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -14,6 +15,13 @@ type TmuxSession struct {
     Path string
     Attached bool
     Env map[string]string
+    Command string
+    Split PaneSplit
+}
+
+type PaneSplit struct {
+    Direction string
+    Size string
     Command string
 }
 
@@ -72,6 +80,36 @@ func CreateNewSession(session TmuxSession) error {
         }
     }
 
+    if session.Split.Direction != "" && session.Split.Size != "" {
+        var direction string
+        if session.Split.Direction == "h" || session.Split.Direction == "horizontal" {
+            direction = "-h"
+        } else if session.Split.Direction == "v" || session.Split.Direction == "vertical" {
+            direction = "-v"
+        } else {
+            return errors.New("Invalid split direction")
+        }
+
+        cmd = exec.Command("tmux", "split-pane", direction, "-t", session.Name + ".0", "-l", session.Split.Size)
+        fmt.Println(cmd.String())
+        if err := cmd.Run(); err != nil {
+            return err
+        }
+
+        if session.Split.Command != "" {
+            cmd = exec.Command("tmux", "send-keys", "-t", session.Name + ".1", session.Split.Command, "ENTER")
+            fmt.Println(cmd.String())
+            if err := cmd.Run(); err != nil {
+                return err
+            }
+        }
+
+        cmd = exec.Command("tmux", "select-pane", "-t", session.Name + ".0")
+        fmt.Println(cmd.String())
+        if err := cmd.Run(); err != nil {
+            return err
+        }
+    }
     return nil
 }
 

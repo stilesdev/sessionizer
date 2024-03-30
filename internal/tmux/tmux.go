@@ -39,7 +39,6 @@ func IsInTmux() bool {
 
 func SwitchToSession(session TmuxSession) {
     cmd := exec.Command("tmux", "switch-client", "-t", session.Name)
-    //fmt.Println(cmd.String())
     cmd.Stdin = os.Stdin
     cmd.Stdout = os.Stdout
     cmd.Stderr = os.Stderr
@@ -48,7 +47,6 @@ func SwitchToSession(session TmuxSession) {
 
 func AttachToSession(session TmuxSession) {
     cmd := exec.Command("tmux", "attach", "-t", session.Name)
-    //fmt.Println(cmd.String())
     cmd.Stdin = os.Stdin
     cmd.Stdout = os.Stdout
     cmd.Stderr = os.Stderr
@@ -68,7 +66,6 @@ func CreateNewSession(session TmuxSession) error {
     }
 
     cmd := exec.Command("tmux", args...)
-    //fmt.Println(cmd String())
     if err := cmd.Run(); err != nil {
         return err
     }
@@ -91,21 +88,18 @@ func CreateNewSession(session TmuxSession) error {
         }
 
         cmd = exec.Command("tmux", "split-pane", direction, "-t", session.Name + ".0", "-l", session.Split.Size)
-        fmt.Println(cmd.String())
         if err := cmd.Run(); err != nil {
             return err
         }
 
         if session.Split.Command != "" {
             cmd = exec.Command("tmux", "send-keys", "-t", session.Name + ".1", session.Split.Command, "ENTER")
-            fmt.Println(cmd.String())
             if err := cmd.Run(); err != nil {
                 return err
             }
         }
 
         cmd = exec.Command("tmux", "select-pane", "-t", session.Name + ".0")
-        fmt.Println(cmd.String())
         if err := cmd.Run(); err != nil {
             return err
         }
@@ -115,7 +109,6 @@ func CreateNewSession(session TmuxSession) error {
 
 func ListExistingSessions() ([]TmuxSession, error) {
     cmd := exec.Command("tmux", "list-sessions", "-F", "#{session_name} #{session_path} #{session_attached}")
-    //fmt.Println(cmd.String())
     sessionOut, err := cmd.StdoutPipe()
     if err != nil {
         return nil, err

@@ -16,6 +16,14 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+var showDebug bool
+
+func debugLog(message ...any) {
+    if showDebug {
+        fmt.Println(message...)
+    }
+}
+
 func main() {
     var configFile string
     var config Config
@@ -35,17 +43,21 @@ func main() {
                 Value: defaultConfigFile,
                 Destination: &configFile,
             },
+            &cli.BoolFlag{
+                Name: "debug",
+                Usage: "Print debug messages to stdout",
+                Destination: &showDebug,
+            },
         },
         Action: func(ctx *cli.Context) error {
             if _, err := toml.DecodeFile(configFile, &config); err == nil {
-                fmt.Println("Using config file:", configFile)
-                fmt.Printf("%+v\n", config)
+                debugLog("Using config file:", configFile)
             } else {
                 if configFile != defaultConfigFile {
                     // user specified config file but we couldn't decode it
                     return err
                 }
-                fmt.Println("Error:", err)
+                debugLog("Using default config, error loading file:", err)
 
                 // not able to load default config, set defaults for anything required here:
                 defaultSessionConfig := SessionsConfig{
@@ -65,7 +77,7 @@ func main() {
                 return errors.New("fzf is not installed or could not be found in $PATH")
             }
 
-            fmt.Printf("%#v\n", config)
+            debugLog(fmt.Sprintf("Loaded config: %+v", config))
 
             existingTmuxSessions, err := tmux.ListExistingSessions()
             if err != nil {
@@ -144,13 +156,13 @@ func main() {
                 return err
             } else if selectedIndex < 0 && enteredQuery == "" {
                 // not an error, but no valid selection made
-                fmt.Println("user exited")
+                debugLog("user exited")
                 return nil
             }
 
             var tmuxSession tmux.TmuxSession
             if selectedIndex >= 0 {
-                fmt.Printf("%#v\n", sessions[selectedIndex])
+                debugLog(fmt.Sprintf("Selected: %#v", sessions[selectedIndex]))
                 
                 if sessions[selectedIndex].Exists {
                     for _, existingTmuxSession := range existingTmuxSessions {
@@ -229,7 +241,7 @@ func parseGlobToPaths(glob string) ([]string) {
 
     matches, err := filepath.Glob(expandHome(glob))
     if err != nil {
-        fmt.Println("Unable to parse glob:", glob)
+        debugLog("Unable to parse glob:", glob)
         return paths
     }
 

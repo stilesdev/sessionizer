@@ -14,6 +14,7 @@ type TmuxSession struct {
     Path string
     Attached bool
     Env map[string]string
+    Command string
 }
 
 func IsTmuxAvailable() bool {
@@ -62,6 +63,13 @@ func CreateNewSession(session TmuxSession) error {
     //fmt.Println(cmd String())
     if err := cmd.Run(); err != nil {
         return err
+    }
+
+    if session.Command != "" {
+        cmd = exec.Command("tmux", "send-keys", "-t", session.Name + ".0", session.Command, "ENTER")
+        if err := cmd.Run(); err != nil {
+            return err
+        }
     }
 
     return nil

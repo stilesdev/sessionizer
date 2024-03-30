@@ -156,6 +156,7 @@ func main() {
                         Name: sessions[selectedIndex].Name,
                         Path: sessions[selectedIndex].Path,
                         Env: sessions[selectedIndex].Env,
+                        Command: sessions[selectedIndex].Command,
                     }
 
                     tmux.CreateNewSession(tmuxSession)
@@ -189,6 +190,7 @@ type SessionsConfig struct {
     Path string
     Paths []string
     Env map[string]string
+    Command string
 }
 
 type TmuxConfig struct {
@@ -208,6 +210,7 @@ type Session struct {
     IsScratch bool
     IsAttached bool
     Env map[string]string
+    Command string
 }
 
 func parseGlobToPaths(glob string) ([]string) {
@@ -260,6 +263,7 @@ func parseSession(path string, sessionConfig SessionsConfig, existingTmuxSession
         Name: filepath.Base(path),
         FzfEntry: unexpandHome(path),
         Env: sessionConfig.Env,
+        Command: sessionConfig.Command,
     }
 
     for _, tmuxSession := range existingTmuxSessions {

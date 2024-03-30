@@ -1,6 +1,7 @@
 package tmux
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -12,6 +13,7 @@ type TmuxSession struct {
     Name string
     Path string
     Attached bool
+    Env map[string]string
 }
 
 func IsTmuxAvailable() bool {
@@ -45,7 +47,18 @@ func AttachToSession(session TmuxSession) {
 }
 
 func CreateNewSession(session TmuxSession) error {
-    cmd := exec.Command("tmux", "new-session", "-d", "-s", session.Name, "-c", session.Path)
+    args := []string{
+        "new-session",
+        "-d",
+        "-s", session.Name,
+        "-c", session.Path,
+    }
+
+    for key, val := range session.Env {
+        args = append(args, "-e", fmt.Sprintf("%s=%s", key, val))
+    }
+
+    cmd := exec.Command("tmux", args...)
     //fmt.Println(cmd String())
     if err := cmd.Run(); err != nil {
         return err

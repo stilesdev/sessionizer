@@ -75,7 +75,7 @@ func main() {
             for _, sessionConfig := range config.Sessions {
                 if sessionConfig.Path != "" {
                     for _, path := range parseGlobToPaths(sessionConfig.Path) {
-                        session := parseSession(path, existingTmuxSessions)
+                        session := parseSession(path, sessionConfig, existingTmuxSessions)
                         if !session.IsAttached || !config.Tmux.HideAttachedSessions {
                             sessions = append(sessions, session)
                         }
@@ -85,7 +85,7 @@ func main() {
                 if len(sessionConfig.Paths) > 0 {
                     for _, glob := range sessionConfig.Paths {
                         for _, path := range parseGlobToPaths(glob) {
-                            session := parseSession(path, existingTmuxSessions)
+                            session := parseSession(path, sessionConfig, existingTmuxSessions)
                             if !session.IsAttached || !config.Tmux.HideAttachedSessions {
                                 sessions = append(sessions, session)
                             }
@@ -155,6 +155,7 @@ func main() {
                     tmuxSession = tmux.TmuxSession{
                         Name: sessions[selectedIndex].Name,
                         Path: sessions[selectedIndex].Path,
+                        Env: sessions[selectedIndex].Env,
                     }
 
                     tmux.CreateNewSession(tmuxSession)
@@ -187,6 +188,7 @@ func main() {
 type SessionsConfig struct {
     Path string
     Paths []string
+    Env map[string]string
 }
 
 type TmuxConfig struct {
@@ -205,6 +207,7 @@ type Session struct {
     Exists bool
     IsScratch bool
     IsAttached bool
+    Env map[string]string
 }
 
 func parseGlobToPaths(glob string) ([]string) {
@@ -251,11 +254,12 @@ func unexpandHome(path string) string {
     return path
 }
 
-func parseSession(path string, existingTmuxSessions []tmux.TmuxSession) Session {
+func parseSession(path string, sessionConfig SessionsConfig, existingTmuxSessions []tmux.TmuxSession) Session {
     session := Session{
         Path: path,
         Name: filepath.Base(path),
         FzfEntry: unexpandHome(path),
+        Env: sessionConfig.Env,
     }
 
     for _, tmuxSession := range existingTmuxSessions {

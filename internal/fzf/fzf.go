@@ -54,9 +54,7 @@ func promptError(err error) (int, string, string, error) {
 //
 // If the user exits fzf without making a selection, this returns -1, "", "", nil
 func Prompt(options []string) (selectedIndex int, selectedOption string, enteredQuery string, err error) {
-    // TODO: figure out how to dynamically change prompt or something to indicate that a generic session will be created with the entered query as the name
-    // TODO: or hook into TAB to always create a scratch session with whatever query is entered when pressing TAB
-    fzf := exec.Command("fzf", "--exact", "--print-query", "--no-sort", "--tac", "--cycle", "--with-nth", "2..")
+    fzf := exec.Command("fzf", "--exact", "--print-query", "--no-sort", "--tac", "--cycle", "--with-nth", "2..", "--bind", "tab:print-query")
     stdin, err := fzf.StdinPipe()
     if err != nil {
         return promptError(err)
@@ -102,17 +100,16 @@ func Prompt(options []string) (selectedIndex int, selectedOption string, entered
     } 
 
     lines := strings.Split(string(fzfResult), "\n")
-
-    //fmt.Println("Split result:", lines, len(lines))
     
     if len(lines) == 2 {
+        // an item was not selected from the list, return just the query entered into fzf
         return -1, "", lines[0], nil
     } else if len(lines) == 3 {
+        // an item was selected from the list, return the selected index and item selected in addition to the query entered into fzf
         idx, entry, err := stripIndex(lines[1])
         if err != nil {
             return promptError(err)
         }
-        fmt.Println("Selected index", idx)
         return idx, entry, lines[0], nil
     } else {
         return promptError(errors.New("Invalid result returned from system fzf executable"))

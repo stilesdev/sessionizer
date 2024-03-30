@@ -77,7 +77,11 @@ func main() {
                     for _, path := range parseGlobToPaths(sessionConfig.Path) {
                         session := parseSession(path, sessionConfig, existingTmuxSessions)
                         if !session.IsAttached || !config.Tmux.HideAttachedSessions {
-                            sessions = append(sessions, session)
+                            if found, index := findSessionIndex(session, sessions); found {
+                                sessions[index] = session
+                            } else {
+                                sessions = append(sessions, session)
+                            }
                         }
                     }
                 }
@@ -87,7 +91,11 @@ func main() {
                         for _, path := range parseGlobToPaths(glob) {
                             session := parseSession(path, sessionConfig, existingTmuxSessions)
                             if !session.IsAttached || !config.Tmux.HideAttachedSessions {
-                                sessions = append(sessions, session)
+                                if found, index := findSessionIndex(session, sessions); found {
+                                    sessions[index] = session
+                                } else {
+                                    sessions = append(sessions, session)
+                                }
                             }
                         }
                     }
@@ -232,6 +240,16 @@ func parseGlobToPaths(glob string) ([]string) {
     }
 
     return paths
+}
+
+func findSessionIndex(target Session, sessions []Session) (bool, int) {
+    for index, session := range sessions {
+        if session.Path == target.Path {
+            return true, index
+        }
+    }
+
+    return false, 0
 }
 
 func tmuxSessionExists(path string, existingSessions []tmux.TmuxSession) bool {

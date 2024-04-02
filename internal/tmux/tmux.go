@@ -87,7 +87,19 @@ func CreateNewSession(session TmuxSession) error {
             return errors.New("Invalid split direction")
         }
 
-        cmd = exec.Command("tmux", "split-pane", direction, "-t", session.Name + ".0", "-l", session.Split.Size)
+        args := []string{
+            "split-pane",
+            direction,
+            "-t", session.Name + ".0",
+            "-l", session.Split.Size,
+            "-c", session.Path,
+        }
+
+        for key, val := range session.Env {
+            args = append(args, "-e", fmt.Sprintf("%s=%s", key, val))
+        }
+
+        cmd = exec.Command("tmux", args...)
         if err := cmd.Run(); err != nil {
             return err
         }

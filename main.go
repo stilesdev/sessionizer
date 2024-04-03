@@ -309,6 +309,10 @@ func parseSession(path string, sessionConfig SessionsConfig, existingTmuxSession
         }
     }
 
+    if session.Split.Path != "" {
+        session.Split.Path = expandHome(session.Split.Path)
+    }
+
     return session
 }
 

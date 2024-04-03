@@ -23,6 +23,7 @@ type PaneSplit struct {
     Direction string
     Size string
     Command string
+    Path string
 }
 
 func IsTmuxAvailable() bool {
@@ -87,12 +88,17 @@ func CreateNewSession(session TmuxSession) error {
             return errors.New("Invalid split direction")
         }
 
+        path := session.Path
+        if session.Split.Path != "" {
+            path = session.Split.Path
+        }
+
         args := []string{
             "split-pane",
             direction,
             "-t", session.Name + ".0",
             "-l", session.Split.Size,
-            "-c", session.Path,
+            "-c", path,
         }
 
         for key, val := range session.Env {

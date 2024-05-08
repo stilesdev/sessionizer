@@ -300,6 +300,10 @@ func parseSession(path string, sessionConfig SessionsConfig, existingTmuxSession
         Split: sessionConfig.Split,
     }
 
+    for key, val := range session.Env {
+        session.Env[key] = expandHome(val)
+    }
+
     for _, tmuxSession := range existingTmuxSessions {
         if tmuxSession.Path == path && tmuxSession.Name == session.Name {
             session.FzfEntry = fmt.Sprintf("tmux: %s [%s]", session.Name, unexpandHome(path))

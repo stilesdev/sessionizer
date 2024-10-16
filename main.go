@@ -27,6 +27,7 @@ func debugLog(message ...any) {
 func main() {
     var configFile string
     var config Config
+    var sessionOverride string
 
     defaultConfigFile, err := xdg.ConfigFile("sessionizer/config.toml")
     if err != nil {
@@ -47,6 +48,11 @@ func main() {
                 Name: "debug",
                 Usage: "Print debug messages to stdout",
                 Destination: &showDebug,
+            },
+            &cli.StringFlag{
+                Name: "open",
+                Usage: "Open the provided session immediately instead of prompting to select a session with fzf",
+                Destination: &sessionOverride,
             },
         },
         Action: func(ctx *cli.Context) error {
@@ -88,7 +94,7 @@ func main() {
                 if sessionConfig.Path != "" {
                     for _, path := range parseGlobToPaths(sessionConfig.Path) {
                         session := parseSession(path, sessionConfig, existingTmuxSessions)
-                        if !session.IsAttached || !config.Tmux.HideAttachedSessions {
+                        if !session.IsAttached || !config.Tmux.HideAttachedSessions || sessionOverride != "" {
                             if found, index := findSessionIndex(session, sessions); found {
                                 sessions[index] = session
                             } else {
@@ -102,7 +108,7 @@ func main() {
                     for _, glob := range sessionConfig.Paths {
                         for _, path := range parseGlobToPaths(glob) {
                             session := parseSession(path, sessionConfig, existingTmuxSessions)
-                            if !session.IsAttached || !config.Tmux.HideAttachedSessions {
+                            if !session.IsAttached || !config.Tmux.HideAttachedSessions || sessionOverride != "" {
                                 if found, index := findSessionIndex(session, sessions); found {
                                     sessions[index] = session
                                 } else {
@@ -120,7 +126,7 @@ func main() {
                 excludeSession := false
 
                 // exclude if attached and configured to hide attached sessions
-                if config.Tmux.HideAttachedSessions && existingSession.Attached {
+                if (config.Tmux.HideAttachedSessions && existingSession.Attached) || sessionOverride != "" {
                     excludeSession = true
                 }
                 
@@ -144,20 +150,32 @@ func main() {
                 }
             }
 
+            var selectedIndex int
+            var enteredQuery string
+
             sortSessions(&sessions)
 
-            fzfEntries := make([]string, len(sessions))
-            for idx, session := range sessions {
-                fzfEntries[idx] = session.FzfEntry
-            }
+            if sessionOverride == "" {
+                fzfEntries := make([]string, len(sessions))
+                for idx, session := range sessions {
+                    fzfEntries[idx] = session.FzfEntry
+                }
 
-            selectedIndex, _, enteredQuery, err := fzf.Prompt(fzfEntries)
-            if err != nil {
-                return err
-            } else if selectedIndex < 0 && enteredQuery == "" {
-                // not an error, but no valid selection made
-                debugLog("user exited")
-                return nil
+                selectedIndex, _, enteredQuery, err = fzf.Prompt(fzfEntries)
+                if err != nil {
+                    return err
+                } else if selectedIndex < 0 && enteredQuery == "" {
+                    // not an error, but no valid selection made
+                    debugLog("user exited")
+                    return nil
+                }
+            } else {
+                for index, session := range sessions {
+                    if session.Name == sessionOverride || session.Path == sessionOverride {
+                        selectedIndex = index
+                        break
+                    }
+                }
             }
 
             var tmuxSession tmux.TmuxSession
@@ -182,7 +200,7 @@ func main() {
 
                     tmux.CreateNewSession(tmuxSession)
                 }
-            } else {
+            } else if enteredQuery != "" {
                 // no selection, create scratch
                 tmuxSession = tmux.TmuxSession{
                     Name: enteredQuery,
@@ -190,6 +208,9 @@ func main() {
                 }
 
                 tmux.CreateNewSession(tmuxSession)
+            } else {
+                debugLog("no session selected and no query returned from fzf")
+                return nil
             }
 
             if tmux.IsInTmux() {

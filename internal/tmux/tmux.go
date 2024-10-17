@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -17,6 +19,7 @@ type TmuxSession struct {
     Env map[string]string
     Command string
     Split PaneSplit
+	Windows []TmuxWindow
 }
 
 type PaneSplit struct {
@@ -24,6 +27,12 @@ type PaneSplit struct {
     Size string
     Command string
     Path string
+}
+
+type TmuxWindow struct {
+	Path string
+	Env map[string]string
+	Command string
 }
 
 func IsTmuxAvailable() bool {
@@ -122,6 +131,41 @@ func CreateNewSession(session TmuxSession) error {
             return err
         }
     }
+
+	for i, window := range session.Windows {
+		path := session.Path
+		if window.Path != "" {
+			path = window.Path
+		}
+
+		args := []string{
+			"new-window",
+			"-a", "-t", session.Name + ":" + strconv.Itoa(i),
+			"-d", // don't make the new window the active window
+			"-c", path,
+		}
+
+		// merge base session env with window env, window env takes priority on collisions
+		env := maps.Clone(session.Env)
+		maps.Copy(env, window.Env)
+
+		for key, val := range env {
+			args = append(args, "-e", fmt.Sprintf("%s=%s", key, val))
+		}
+
+		cmd = exec.Command("tmux", args...)
+        if err := cmd.Run(); err != nil {
+            return err
+        }
+
+		if window.Command != "" {
+            cmd = exec.Command("tmux", "send-keys", "-t", session.Name + ":" + strconv.Itoa(i+1), window.Command, "ENTER")
+            if err := cmd.Run(); err != nil {
+                return err
+            }
+		}
+	}
+
     return nil
 }
 

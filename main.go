@@ -196,6 +196,7 @@ func main() {
                         Env: sessions[selectedIndex].Env,
                         Command: sessions[selectedIndex].Command,
                         Split: sessions[selectedIndex].Split,
+						Windows: sessions[selectedIndex].Windows,
                     }
 
                     tmux.CreateNewSession(tmuxSession)
@@ -234,6 +235,7 @@ type SessionsConfig struct {
     Env map[string]string
     Command string
     Split tmux.PaneSplit
+	Windows []tmux.TmuxWindow
 }
 
 type TmuxConfig struct {
@@ -255,6 +257,7 @@ type Session struct {
     Env map[string]string
     Command string
     Split tmux.PaneSplit
+	Windows []tmux.TmuxWindow
 }
 
 func parseGlobToPaths(glob string) ([]string) {
@@ -319,6 +322,7 @@ func parseSession(path string, sessionConfig SessionsConfig, existingTmuxSession
         Env: sessionConfig.Env,
         Command: sessionConfig.Command,
         Split: sessionConfig.Split,
+		Windows: sessionConfig.Windows,
     }
 
     for key, val := range session.Env {
@@ -337,6 +341,12 @@ func parseSession(path string, sessionConfig SessionsConfig, existingTmuxSession
     if session.Split.Path != "" {
         session.Split.Path = expandHome(session.Split.Path)
     }
+
+	for i, window := range session.Windows {
+		if window.Path != "" {
+			session.Windows[i].Path = expandHome(window.Path)
+		}
+	}
 
     return session
 }

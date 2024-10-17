@@ -19,328 +19,327 @@ import (
 var showDebug bool
 
 func debugLog(message ...any) {
-    if showDebug {
-        fmt.Println(message...)
-    }
+	if showDebug {
+		fmt.Println(message...)
+	}
 }
 
 func main() {
-    var configFile string
-    var config Config
-    var sessionOverride string
+	var configFile string
+	var config Config
+	var sessionOverride string
 
-    defaultConfigFile, err := xdg.ConfigFile("sessionizer/config.toml")
-    if err != nil {
-        log.Fatalln(err)
-    }
+	defaultConfigFile, err := xdg.ConfigFile("sessionizer/config.toml")
+	if err != nil {
+		log.Fatalln(err)
+	}
 
-    cli := cli.App{
-        Name: "sessionizer",
-        Flags: []cli.Flag{
-            &cli.StringFlag{
-                Name: "config",
-                Aliases: []string{"c"},
-                Usage: "Load configuration from `FILE`",
-                Value: defaultConfigFile,
-                Destination: &configFile,
-            },
-            &cli.BoolFlag{
-                Name: "debug",
-                Usage: "Print debug messages to stdout",
-                Destination: &showDebug,
-            },
-            &cli.StringFlag{
-                Name: "open",
-                Usage: "Open the provided session immediately instead of prompting to select a session with fzf",
-                Destination: &sessionOverride,
-            },
-        },
-        Action: func(ctx *cli.Context) error {
-            if _, err := toml.DecodeFile(configFile, &config); err == nil {
-                debugLog("Using config file:", configFile)
-            } else {
-                if configFile != defaultConfigFile {
-                    // user specified config file but we couldn't decode it
-                    return err
-                }
-                debugLog("Using default config, error loading file:", err)
+	cli := cli.App{
+		Name: "sessionizer",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:        "config",
+				Aliases:     []string{"c"},
+				Usage:       "Load configuration from `FILE`",
+				Value:       defaultConfigFile,
+				Destination: &configFile,
+			},
+			&cli.BoolFlag{
+				Name:        "debug",
+				Usage:       "Print debug messages to stdout",
+				Destination: &showDebug,
+			},
+			&cli.StringFlag{
+				Name:        "open",
+				Usage:       "Open the provided session immediately instead of prompting to select a session with fzf",
+				Destination: &sessionOverride,
+			},
+		},
+		Action: func(ctx *cli.Context) error {
+			if _, err := toml.DecodeFile(configFile, &config); err == nil {
+				debugLog("Using config file:", configFile)
+			} else {
+				if configFile != defaultConfigFile {
+					// user specified config file but we couldn't decode it
+					return err
+				}
+				debugLog("Using default config, error loading file:", err)
 
-                // not able to load default config, set defaults for anything required here:
-                defaultSessionConfig := SessionsConfig{
-                    Path: filepath.Join(xdg.Home, "*"),
-                }
-                config.Sessions = append(config.Sessions, defaultSessionConfig)
-            }
+				// not able to load default config, set defaults for anything required here:
+				defaultSessionConfig := SessionsConfig{
+					Path: filepath.Join(xdg.Home, "*"),
+				}
+				config.Sessions = append(config.Sessions, defaultSessionConfig)
+			}
 
+			var sessions []Session
 
-            var sessions []Session
+			if !tmux.IsTmuxAvailable() {
+				return errors.New("tmux is not installed or could not be found in $PATH")
+			}
 
-            if !tmux.IsTmuxAvailable() {
-                return errors.New("tmux is not installed or could not be found in $PATH")
-            }
+			if !fzf.IsAvailable() {
+				return errors.New("fzf is not installed or could not be found in $PATH")
+			}
 
-            if !fzf.IsAvailable() {
-                return errors.New("fzf is not installed or could not be found in $PATH")
-            }
+			debugLog(fmt.Sprintf("Loaded config: %+v", config))
 
-            debugLog(fmt.Sprintf("Loaded config: %+v", config))
+			existingTmuxSessions, err := tmux.ListExistingSessions()
+			if err != nil {
+				return err
+			}
 
-            existingTmuxSessions, err := tmux.ListExistingSessions()
-            if err != nil {
-                return err
-            }
+			for _, sessionConfig := range config.Sessions {
+				if sessionConfig.Path != "" {
+					for _, path := range parseGlobToPaths(sessionConfig.Path) {
+						session := parseSession(path, sessionConfig, existingTmuxSessions)
+						if !session.IsAttached || !config.Tmux.HideAttachedSessions || sessionOverride != "" {
+							if found, index := findSessionIndex(session, sessions); found {
+								sessions[index] = session
+							} else {
+								sessions = append(sessions, session)
+							}
+						}
+					}
+				}
 
-            for _, sessionConfig := range config.Sessions {
-                if sessionConfig.Path != "" {
-                    for _, path := range parseGlobToPaths(sessionConfig.Path) {
-                        session := parseSession(path, sessionConfig, existingTmuxSessions)
-                        if !session.IsAttached || !config.Tmux.HideAttachedSessions || sessionOverride != "" {
-                            if found, index := findSessionIndex(session, sessions); found {
-                                sessions[index] = session
-                            } else {
-                                sessions = append(sessions, session)
-                            }
-                        }
-                    }
-                }
+				if len(sessionConfig.Paths) > 0 {
+					for _, glob := range sessionConfig.Paths {
+						for _, path := range parseGlobToPaths(glob) {
+							session := parseSession(path, sessionConfig, existingTmuxSessions)
+							if !session.IsAttached || !config.Tmux.HideAttachedSessions || sessionOverride != "" {
+								if found, index := findSessionIndex(session, sessions); found {
+									sessions[index] = session
+								} else {
+									sessions = append(sessions, session)
+								}
+							}
+						}
+					}
+				}
+			}
 
-                if len(sessionConfig.Paths) > 0 {
-                    for _, glob := range sessionConfig.Paths {
-                        for _, path := range parseGlobToPaths(glob) {
-                            session := parseSession(path, sessionConfig, existingTmuxSessions)
-                            if !session.IsAttached || !config.Tmux.HideAttachedSessions || sessionOverride != "" {
-                                if found, index := findSessionIndex(session, sessions); found {
-                                    sessions[index] = session
-                                } else {
-                                    sessions = append(sessions, session)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+			// look for any scratch sessions - existing sessions in tmux but not associated with any paths from config file
+			// TODO: add scratch path as config opt, and explicitly match scratch sessions to that path
+			for _, existingSession := range existingTmuxSessions {
+				excludeSession := false
 
-            // look for any scratch sessions - existing sessions in tmux but not associated with any paths from config file
-            // TODO: add scratch path as config opt, and explicitly match scratch sessions to that path
-            for _, existingSession := range existingTmuxSessions {
-                excludeSession := false
+				// exclude if attached and configured to hide attached sessions
+				if (config.Tmux.HideAttachedSessions && existingSession.Attached) || sessionOverride != "" {
+					excludeSession = true
+				}
 
-                // exclude if attached and configured to hide attached sessions
-                if (config.Tmux.HideAttachedSessions && existingSession.Attached) || sessionOverride != "" {
-                    excludeSession = true
-                }
-                
-                // exclude if already included via paths - only looking for scratch sessions here
-                for _, session := range sessions {
-                    if existingSession.Name == session.Name && existingSession.Path == session.Path {
-                        excludeSession = true
-                        break
-                    }
-                }
+				// exclude if already included via paths - only looking for scratch sessions here
+				for _, session := range sessions {
+					if existingSession.Name == session.Name && existingSession.Path == session.Path {
+						excludeSession = true
+						break
+					}
+				}
 
-                if !excludeSession {
-                    sessions = append(sessions, Session{
-                        Path: existingSession.Path,
-                        Name: existingSession.Name,
-                        FzfEntry: fmt.Sprintf("scratch: %s", existingSession.Name),
-                        Exists: true,
-                        IsAttached: existingSession.Attached,
-                        IsScratch: true,
-                    })
-                }
-            }
+				if !excludeSession {
+					sessions = append(sessions, Session{
+						Path:       existingSession.Path,
+						Name:       existingSession.Name,
+						FzfEntry:   fmt.Sprintf("scratch: %s", existingSession.Name),
+						Exists:     true,
+						IsAttached: existingSession.Attached,
+						IsScratch:  true,
+					})
+				}
+			}
 
-            var selectedIndex int
-            var enteredQuery string
+			var selectedIndex int
+			var enteredQuery string
 
-            sortSessions(&sessions)
+			sortSessions(&sessions)
 
-            if sessionOverride == "" {
-                fzfEntries := make([]string, len(sessions))
-                for idx, session := range sessions {
-                    fzfEntries[idx] = session.FzfEntry
-                }
+			if sessionOverride == "" {
+				fzfEntries := make([]string, len(sessions))
+				for idx, session := range sessions {
+					fzfEntries[idx] = session.FzfEntry
+				}
 
-                selectedIndex, _, enteredQuery, err = fzf.Prompt(fzfEntries)
-                if err != nil {
-                    return err
-                } else if selectedIndex < 0 && enteredQuery == "" {
-                    // not an error, but no valid selection made
-                    debugLog("user exited")
-                    return nil
-                }
-            } else {
-                for index, session := range sessions {
-                    if session.Name == sessionOverride || session.Path == sessionOverride {
-                        selectedIndex = index
-                        break
-                    }
-                }
-            }
+				selectedIndex, _, enteredQuery, err = fzf.Prompt(fzfEntries)
+				if err != nil {
+					return err
+				} else if selectedIndex < 0 && enteredQuery == "" {
+					// not an error, but no valid selection made
+					debugLog("user exited")
+					return nil
+				}
+			} else {
+				for index, session := range sessions {
+					if session.Name == sessionOverride || session.Path == sessionOverride {
+						selectedIndex = index
+						break
+					}
+				}
+			}
 
-            var tmuxSession tmux.TmuxSession
-            if selectedIndex >= 0 {
-                debugLog(fmt.Sprintf("Selected: %#v", sessions[selectedIndex]))
-                
-                if sessions[selectedIndex].Exists {
-                    for _, existingTmuxSession := range existingTmuxSessions {
-                        if existingTmuxSession.Name == sessions[selectedIndex].Name {
-                            tmuxSession = existingTmuxSession
-                        }
-                    }
-                } else {
-                    // session does not exist, create it now
-                    tmuxSession = tmux.TmuxSession{
-                        Name: sessions[selectedIndex].Name,
-                        Path: sessions[selectedIndex].Path,
-                        Env: sessions[selectedIndex].Env,
-                        Command: sessions[selectedIndex].Command,
-                        Split: sessions[selectedIndex].Split,
+			var tmuxSession tmux.TmuxSession
+			if selectedIndex >= 0 {
+				debugLog(fmt.Sprintf("Selected: %#v", sessions[selectedIndex]))
+
+				if sessions[selectedIndex].Exists {
+					for _, existingTmuxSession := range existingTmuxSessions {
+						if existingTmuxSession.Name == sessions[selectedIndex].Name {
+							tmuxSession = existingTmuxSession
+						}
+					}
+				} else {
+					// session does not exist, create it now
+					tmuxSession = tmux.TmuxSession{
+						Name:    sessions[selectedIndex].Name,
+						Path:    sessions[selectedIndex].Path,
+						Env:     sessions[selectedIndex].Env,
+						Command: sessions[selectedIndex].Command,
+						Split:   sessions[selectedIndex].Split,
 						Windows: sessions[selectedIndex].Windows,
-                    }
+					}
 
-                    tmux.CreateNewSession(tmuxSession)
-                }
-            } else if enteredQuery != "" {
-                // no selection, create scratch
-                tmuxSession = tmux.TmuxSession{
-                    Name: enteredQuery,
-                    Path: xdg.Home,
-                }
+					tmux.CreateNewSession(tmuxSession)
+				}
+			} else if enteredQuery != "" {
+				// no selection, create scratch
+				tmuxSession = tmux.TmuxSession{
+					Name: enteredQuery,
+					Path: xdg.Home,
+				}
 
-                tmux.CreateNewSession(tmuxSession)
-            } else {
-                debugLog("no session selected and no query returned from fzf")
-                return nil
-            }
+				tmux.CreateNewSession(tmuxSession)
+			} else {
+				debugLog("no session selected and no query returned from fzf")
+				return nil
+			}
 
-            if tmux.IsInTmux() {
-                tmux.SwitchToSession(tmuxSession)
-            } else {
-                tmux.AttachToSession(tmuxSession)
-            }
+			if tmux.IsInTmux() {
+				tmux.SwitchToSession(tmuxSession)
+			} else {
+				tmux.AttachToSession(tmuxSession)
+			}
 
-            return nil
-        },
-    }
+			return nil
+		},
+	}
 
-    if err := cli.Run(os.Args); err != nil {
-        log.Fatalln(err)
-    }
+	if err := cli.Run(os.Args); err != nil {
+		log.Fatalln(err)
+	}
 }
 
 type SessionsConfig struct {
-    Path string
-    Paths []string
-    Env map[string]string
-    Command string
-    Split tmux.PaneSplit
+	Path    string
+	Paths   []string
+	Env     map[string]string
+	Command string
+	Split   tmux.PaneSplit
 	Windows []tmux.TmuxWindow
 }
 
 type TmuxConfig struct {
-    HideAttachedSessions bool
+	HideAttachedSessions bool
 }
 
 type Config struct {
-    Sessions []SessionsConfig
-    Tmux TmuxConfig
+	Sessions []SessionsConfig
+	Tmux     TmuxConfig
 }
 
 type Session struct {
-    Path string
-    Name string
-    FzfEntry string
-    Exists bool
-    IsScratch bool
-    IsAttached bool
-    Env map[string]string
-    Command string
-    Split tmux.PaneSplit
-	Windows []tmux.TmuxWindow
+	Path       string
+	Name       string
+	FzfEntry   string
+	Exists     bool
+	IsScratch  bool
+	IsAttached bool
+	Env        map[string]string
+	Command    string
+	Split      tmux.PaneSplit
+	Windows    []tmux.TmuxWindow
 }
 
-func parseGlobToPaths(glob string) ([]string) {
-    var paths []string
+func parseGlobToPaths(glob string) []string {
+	var paths []string
 
-    matches, err := filepath.Glob(expandHome(glob))
-    if err != nil {
-        debugLog("Unable to parse glob:", glob)
-        return paths
-    }
+	matches, err := filepath.Glob(expandHome(glob))
+	if err != nil {
+		debugLog("Unable to parse glob:", glob)
+		return paths
+	}
 
-    for _, path := range matches {
-        if fileInfo, err := os.Stat(path); err == nil && fileInfo.IsDir() {
-            paths = append(paths, path)
-        }
-    }
+	for _, path := range matches {
+		if fileInfo, err := os.Stat(path); err == nil && fileInfo.IsDir() {
+			paths = append(paths, path)
+		}
+	}
 
-    return paths
+	return paths
 }
 
 func findSessionIndex(target Session, sessions []Session) (bool, int) {
-    for index, session := range sessions {
-        if session.Path == target.Path {
-            return true, index
-        }
-    }
+	for index, session := range sessions {
+		if session.Path == target.Path {
+			return true, index
+		}
+	}
 
-    return false, 0
+	return false, 0
 }
 
 func tmuxSessionExists(path string, existingSessions []tmux.TmuxSession) bool {
-    for _, existingSession := range existingSessions {
-        if existingSession.Path == path {
-            return true
-        }
-    }
-    
-    return false
+	for _, existingSession := range existingSessions {
+		if existingSession.Path == path {
+			return true
+		}
+	}
+
+	return false
 }
 
 func expandHome(path string) string {
-    if strings.HasPrefix(path, "~" + string(os.PathSeparator)) {
-        return filepath.Join(xdg.Home, path[2:])
-    }
+	if strings.HasPrefix(path, "~"+string(os.PathSeparator)) {
+		return filepath.Join(xdg.Home, path[2:])
+	}
 
-    return path
+	return path
 }
 
 func unexpandHome(path string) string {
-    if strings.HasPrefix(path, xdg.Home) {
-        return filepath.Join("~", path[len(xdg.Home):])
-    }
+	if strings.HasPrefix(path, xdg.Home) {
+		return filepath.Join("~", path[len(xdg.Home):])
+	}
 
-    return path
+	return path
 }
 
 func parseSession(path string, sessionConfig SessionsConfig, existingTmuxSessions []tmux.TmuxSession) Session {
-    session := Session{
-        Path: path,
-        Name: filepath.Base(path),
-        FzfEntry: unexpandHome(path),
-        Env: sessionConfig.Env,
-        Command: sessionConfig.Command,
-        Split: sessionConfig.Split,
-		Windows: sessionConfig.Windows,
-    }
+	session := Session{
+		Path:     path,
+		Name:     filepath.Base(path),
+		FzfEntry: unexpandHome(path),
+		Env:      sessionConfig.Env,
+		Command:  sessionConfig.Command,
+		Split:    sessionConfig.Split,
+		Windows:  sessionConfig.Windows,
+	}
 
-    for key, val := range session.Env {
-        session.Env[key] = expandHome(val)
-    }
+	for key, val := range session.Env {
+		session.Env[key] = expandHome(val)
+	}
 
-    for _, tmuxSession := range existingTmuxSessions {
-        if tmuxSession.Path == path && tmuxSession.Name == session.Name {
-            session.FzfEntry = fmt.Sprintf("tmux: %s [%s]", session.Name, unexpandHome(path))
-            session.Exists = true
-            session.IsAttached = tmuxSession.Attached
-            break
-        }
-    }
+	for _, tmuxSession := range existingTmuxSessions {
+		if tmuxSession.Path == path && tmuxSession.Name == session.Name {
+			session.FzfEntry = fmt.Sprintf("tmux: %s [%s]", session.Name, unexpandHome(path))
+			session.Exists = true
+			session.IsAttached = tmuxSession.Attached
+			break
+		}
+	}
 
-    if session.Split.Path != "" {
-        session.Split.Path = expandHome(session.Split.Path)
-    }
+	if session.Split.Path != "" {
+		session.Split.Path = expandHome(session.Split.Path)
+	}
 
 	for i, window := range session.Windows {
 		if window.Path != "" {
@@ -348,27 +347,27 @@ func parseSession(path string, sessionConfig SessionsConfig, existingTmuxSession
 		}
 	}
 
-    return session
+	return session
 }
 
 func sortSessions(sessions *[]Session) {
-    slices.SortStableFunc(*sessions, func(a Session, b Session) int {
-        if a.IsScratch != b.IsScratch {
-            if a.IsScratch {
-                return 1
-            } else {
-                return -1
-            }
-        }
+	slices.SortStableFunc(*sessions, func(a Session, b Session) int {
+		if a.IsScratch != b.IsScratch {
+			if a.IsScratch {
+				return 1
+			} else {
+				return -1
+			}
+		}
 
-        if a.Exists != b.Exists {
-            if a.Exists {
-                return 1
-            } else {
-                return -1
-            }
-        }
+		if a.Exists != b.Exists {
+			if a.Exists {
+				return 1
+			} else {
+				return -1
+			}
+		}
 
-        return 0
-    })
+		return 0
+	})
 }

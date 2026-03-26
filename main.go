@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,17 +11,10 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/adrg/xdg"
 	"github.com/stilesdev/sessionizer/internal/fzf"
+	"github.com/stilesdev/sessionizer/internal/log"
 	"github.com/stilesdev/sessionizer/internal/tmux"
 	"github.com/urfave/cli/v2"
 )
-
-var showDebug bool
-
-func debugLog(message ...any) {
-	if showDebug {
-		fmt.Println(message...)
-	}
-}
 
 func main() {
 	var configFile string
@@ -30,9 +22,7 @@ func main() {
 	var sessionOverride string
 
 	defaultConfigFile, err := xdg.ConfigFile("sessionizer/config.toml")
-	if err != nil {
-		log.Fatalln(err)
-	}
+	log.FatalIfError(err)
 
 	cli := cli.App{
 		Name: "sessionizer",
@@ -47,7 +37,10 @@ func main() {
 			&cli.BoolFlag{
 				Name:        "debug",
 				Usage:       "Print debug messages to stdout",
-				Destination: &showDebug,
+				Action: func(ctx *cli.Context, value bool) error {
+					log.ShowDebugMessages(value)
+					return nil
+				},
 			},
 			&cli.StringFlag{
 				Name:        "open",
@@ -57,13 +50,13 @@ func main() {
 		},
 		Action: func(ctx *cli.Context) error {
 			if _, err := toml.DecodeFile(configFile, &config); err == nil {
-				debugLog("Using config file:", configFile)
+				log.Debug("Using config file:", configFile)
 			} else {
 				if configFile != defaultConfigFile {
 					// user specified config file but we couldn't decode it
 					return err
 				}
-				debugLog("Using default config, error loading file:", err)
+				log.Debug("Using default config, error loading file:", err)
 
 				// not able to load default config, set defaults for anything required here:
 				defaultSessionConfig := SessionsConfig{
@@ -82,7 +75,7 @@ func main() {
 				return errors.New("fzf is not installed or could not be found in $PATH")
 			}
 
-			debugLog(fmt.Sprintf("Loaded config: %+v", config))
+			log.Debug(fmt.Sprintf("Loaded config: %+v", config))
 
 			existingTmuxSessions, err := tmux.ListExistingSessions()
 			if err != nil {
@@ -165,7 +158,7 @@ func main() {
 					return err
 				} else if selectedIndex < 0 && enteredQuery == "" {
 					// not an error, but no valid selection made
-					debugLog("user exited")
+					log.Debug("user exited")
 					return nil
 				}
 			} else {
@@ -179,7 +172,7 @@ func main() {
 
 			var tmuxSession tmux.TmuxSession
 			if selectedIndex >= 0 {
-				debugLog(fmt.Sprintf("Selected: %#v", sessions[selectedIndex]))
+				log.Debug(fmt.Sprintf("Selected: %#v", sessions[selectedIndex]))
 
 				if sessions[selectedIndex].Exists {
 					for _, existingTmuxSession := range existingTmuxSessions {
@@ -209,7 +202,7 @@ func main() {
 
 				tmux.CreateNewSession(tmuxSession)
 			} else {
-				debugLog("no session selected and no query returned from fzf")
+				log.Debug("no session selected and no query returned from fzf")
 				return nil
 			}
 
@@ -224,7 +217,7 @@ func main() {
 	}
 
 	if err := cli.Run(os.Args); err != nil {
-		log.Fatalln(err)
+		log.Fatal(err)
 	}
 }
 
@@ -264,7 +257,7 @@ func parseGlobToPaths(glob string) []string {
 
 	matches, err := filepath.Glob(expandHome(glob))
 	if err != nil {
-		debugLog("Unable to parse glob:", glob)
+		log.Debug("Unable to parse glob:", glob)
 		return paths
 	}
 

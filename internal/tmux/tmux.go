@@ -34,7 +34,7 @@ type TmuxWindow struct {
 	Command string
 }
 
-func IsTmuxAvailable() bool {
+func IsAvailable() bool {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		return false
 	}

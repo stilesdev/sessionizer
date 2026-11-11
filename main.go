@@ -32,8 +32,8 @@ func main() {
 				Destination: &userConfigFile,
 			},
 			&cli.BoolFlag{
-				Name:        "debug",
-				Usage:       "Print debug messages to stdout",
+				Name:  "debug",
+				Usage: "Print debug messages to stdout",
 				Action: func(ctx *cli.Context, value bool) error {
 					log.ShowDebugMessages(value)
 					return nil
@@ -46,20 +46,17 @@ func main() {
 			},
 		},
 		Action: func(ctx *cli.Context) error {
+			err := checkPathDependencies()
+			if err != nil {
+				return err
+			}
+
 			conf, err := config.Parse(userConfigFile)
 			if err != nil {
 				return err
 			}
 
 			log.Debug(fmt.Sprintf("Loaded config: %+v", conf))
-
-			if !tmux.IsTmuxAvailable() {
-				return errors.New("tmux is not installed or could not be found in $PATH")
-			}
-
-			if !fzf.IsAvailable() {
-				return errors.New("fzf is not installed or could not be found in $PATH")
-			}
 
 			existingTmuxSessions, err := tmux.ListExistingSessions()
 			if err != nil {
@@ -143,4 +140,16 @@ func main() {
 	if err := cli.Run(os.Args); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func checkPathDependencies() error {
+	if !tmux.IsAvailable() {
+		return errors.New("tmux is not installed or could not be found in $PATH")
+	}
+
+	if !fzf.IsAvailable() {
+		return errors.New("fzf is not installed or could not be found in $PATH")
+	}
+
+	return nil
 }

@@ -58,12 +58,12 @@ func main() {
 
 			log.Debug(fmt.Sprintf("Loaded config: %+v", conf))
 
-			existingTmuxSessions, err := tmux.ListExistingSessions()
+			existingSessions, err := tmux.ListExistingSessions()
 			if err != nil {
 				return err
 			}
 
-			sessions, err := session.NewSessionList(existingTmuxSessions, conf, sessionOverride)
+			sessions, err := session.MergeSessionLists(existingSessions, conf, sessionOverride)
 
 			var selectedIndex int
 			var enteredQuery string
@@ -71,7 +71,7 @@ func main() {
 			if sessionOverride == "" {
 				fzfEntries := make([]string, len(sessions))
 				for idx, session := range sessions {
-					fzfEntries[idx] = session.FzfEntry
+					fzfEntries[idx] = session.FzfEntry()
 				}
 
 				selectedIndex, _, enteredQuery, err = fzf.Prompt(fzfEntries)
@@ -84,60 +84,35 @@ func main() {
 				}
 			} else {
 				for index, session := range sessions {
-					if session.Name == sessionOverride || session.Path == sessionOverride {
+					if session.Name == sessionOverride || session.Config.Path == sessionOverride {
 						selectedIndex = index
 						break
 					}
 				}
 			}
 
-			var tmuxSession tmux.TmuxSession
+			var targetSession session.Session
 			if selectedIndex >= 0 {
 				log.Debug(fmt.Sprintf("Selected: %#v", sessions[selectedIndex]))
-
-				if sessions[selectedIndex].Exists {
-					for _, existingTmuxSession := range existingTmuxSessions {
-						if existingTmuxSession.Name == sessions[selectedIndex].Name {
-							tmuxSession = existingTmuxSession
-						}
-					}
-				} else {
-					// session does not exist, create it now
-					tmuxSession = tmux.TmuxSession{
-						Name: sessions[selectedIndex].Name,
-						Path: sessions[selectedIndex].Path,
-						Config: config.Session{
-							Path:    sessions[selectedIndex].Path,
-							Env:     sessions[selectedIndex].Env,
-							Command: sessions[selectedIndex].Command,
-							Split:   sessions[selectedIndex].Split,
-							Windows: sessions[selectedIndex].Windows,
-						},
-						Attached: false,
-					}
-
-					tmux.CreateNewSession(tmuxSession)
-				}
+				// use selected session
+				targetSession = sessions[selectedIndex]
 			} else if enteredQuery != "" {
 				// no selection, create scratch
-				tmuxSession = tmux.TmuxSession{
-					Name: enteredQuery,
-					Path: xdg.Home,
+				targetSession = session.Session{
+					Name:       enteredQuery,
+					Exists:     false,
+					IsAttached: false,
+					IsScratch:  true,
+					Config: config.Session{
+						Path: xdg.Home,
+					},
 				}
-
-				tmux.CreateNewSession(tmuxSession)
 			} else {
 				log.Debug("no session selected and no query returned from fzf")
 				return nil
 			}
 
-			if tmux.IsInTmux() {
-				tmux.SwitchToSession(tmuxSession)
-			} else {
-				tmux.AttachToSession(tmuxSession)
-			}
-
-			return nil
+			return tmux.ActivateSession(targetSession)
 		},
 	}
 

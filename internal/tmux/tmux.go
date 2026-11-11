@@ -11,14 +11,8 @@ import (
 	"strings"
 
 	"github.com/stilesdev/sessionizer/internal/config"
+	"github.com/stilesdev/sessionizer/internal/session"
 )
-
-type TmuxSession struct {
-	Name     string
-	Path     string
-	Attached bool
-	Config   config.Session
-}
 
 func IsAvailable() bool {
 	if _, err := exec.LookPath("tmux"); err != nil {
@@ -28,11 +22,11 @@ func IsAvailable() bool {
 	return true
 }
 
-func IsInTmux() bool {
+func isInTmux() bool {
 	return os.Getenv("TMUX") != ""
 }
 
-func SwitchToSession(session TmuxSession) {
+func switchToSession(session session.Session) {
 	cmd := exec.Command("tmux", "switch-client", "-t", session.Name)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -40,7 +34,7 @@ func SwitchToSession(session TmuxSession) {
 	cmd.Run()
 }
 
-func AttachToSession(session TmuxSession) {
+func attachToSession(session session.Session) {
 	cmd := exec.Command("tmux", "attach", "-t", session.Name)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -48,7 +42,7 @@ func AttachToSession(session TmuxSession) {
 	cmd.Run()
 }
 
-func CreateNewSession(session TmuxSession) error {
+func createNewSession(session session.Session) error {
 	args := []string{
 		"new-session",
 		"-d",
@@ -154,7 +148,24 @@ func CreateNewSession(session TmuxSession) error {
 	return nil
 }
 
-func ListExistingSessions() ([]TmuxSession, error) {
+func ActivateSession(s session.Session) error {
+	if !s.Exists {
+		err := createNewSession(s)
+		if err != nil {
+			return err
+		}
+	}
+
+	if isInTmux() {
+		switchToSession(s)
+	} else {
+		attachToSession(s)
+	}
+
+	return nil
+}
+
+func ListExistingSessions() ([]session.Session, error) {
 	cmd := exec.Command("tmux", "list-sessions", "-F", "#{session_name} #{session_path} #{session_attached}")
 	sessionOut, err := cmd.StdoutPipe()
 	if err != nil {
@@ -171,7 +182,7 @@ func ListExistingSessions() ([]TmuxSession, error) {
 		return nil, err
 	}
 
-	var existingSessions []TmuxSession
+	var existingSessions []session.Session
 
 	if err = cmd.Wait(); err != nil {
 		// return empty slice with nil error here as tmux is probably just not running, which shouldn't be considered an error
@@ -184,10 +195,12 @@ func ListExistingSessions() ([]TmuxSession, error) {
 		split := strings.Split(sessionString, " ")
 
 		if len(split) == 3 {
-			existingSessions = append(existingSessions, TmuxSession{
-				Name:     split[0],
-				Path:     split[1],
-				Attached: split[2] == "1",
+			existingSessions = append(existingSessions, session.Session{
+				Name:       split[0],
+				IsAttached: split[2] == "1",
+				Config: config.Session{
+					Path: split[1],
+				},
 			})
 		}
 	}

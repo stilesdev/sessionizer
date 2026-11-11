@@ -9,29 +9,15 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/stilesdev/sessionizer/internal/config"
 )
 
 type TmuxSession struct {
 	Name     string
 	Path     string
 	Attached bool
-	Env      map[string]string
-	Command  string
-	Split    PaneSplit
-	Windows  []TmuxWindow
-}
-
-type PaneSplit struct {
-	Direction string
-	Size      string
-	Command   string
-	Path      string
-}
-
-type TmuxWindow struct {
-	Path    string
-	Env     map[string]string
-	Command string
+	Config   config.Session
 }
 
 func IsAvailable() bool {
@@ -67,10 +53,10 @@ func CreateNewSession(session TmuxSession) error {
 		"new-session",
 		"-d",
 		"-s", session.Name,
-		"-c", session.Path,
+		"-c", session.Config.Path,
 	}
 
-	for key, val := range session.Env {
+	for key, val := range session.Config.Env {
 		args = append(args, "-e", fmt.Sprintf("%s=%s", key, val))
 	}
 
@@ -79,37 +65,37 @@ func CreateNewSession(session TmuxSession) error {
 		return err
 	}
 
-	if session.Command != "" {
-		cmd = exec.Command("tmux", "send-keys", "-t", session.Name+".0", session.Command, "ENTER")
+	if session.Config.Command != "" {
+		cmd = exec.Command("tmux", "send-keys", "-t", session.Name+".0", session.Config.Command, "ENTER")
 		if err := cmd.Run(); err != nil {
 			return err
 		}
 	}
 
-	if session.Split.Direction != "" && session.Split.Size != "" {
+	if session.Config.Split.Direction != "" && session.Config.Split.Size != "" {
 		var direction string
-		if session.Split.Direction == "h" || session.Split.Direction == "horizontal" {
+		if session.Config.Split.Direction == "h" || session.Config.Split.Direction == "horizontal" {
 			direction = "-h"
-		} else if session.Split.Direction == "v" || session.Split.Direction == "vertical" {
+		} else if session.Config.Split.Direction == "v" || session.Config.Split.Direction == "vertical" {
 			direction = "-v"
 		} else {
 			return errors.New("Invalid split direction")
 		}
 
-		path := session.Path
-		if session.Split.Path != "" {
-			path = session.Split.Path
+		path := session.Config.Path
+		if session.Config.Split.Path != "" {
+			path = session.Config.Split.Path
 		}
 
 		args := []string{
 			"split-pane",
 			direction,
 			"-t", session.Name + ".0",
-			"-l", session.Split.Size,
+			"-l", session.Config.Split.Size,
 			"-c", path,
 		}
 
-		for key, val := range session.Env {
+		for key, val := range session.Config.Env {
 			args = append(args, "-e", fmt.Sprintf("%s=%s", key, val))
 		}
 
@@ -118,8 +104,8 @@ func CreateNewSession(session TmuxSession) error {
 			return err
 		}
 
-		if session.Split.Command != "" {
-			cmd = exec.Command("tmux", "send-keys", "-t", session.Name+".1", session.Split.Command, "ENTER")
+		if session.Config.Split.Command != "" {
+			cmd = exec.Command("tmux", "send-keys", "-t", session.Name+".1", session.Config.Split.Command, "ENTER")
 			if err := cmd.Run(); err != nil {
 				return err
 			}
@@ -131,8 +117,8 @@ func CreateNewSession(session TmuxSession) error {
 		}
 	}
 
-	for i, window := range session.Windows {
-		path := session.Path
+	for i, window := range session.Config.Windows {
+		path := session.Config.Path
 		if window.Path != "" {
 			path = window.Path
 		}
@@ -145,7 +131,7 @@ func CreateNewSession(session TmuxSession) error {
 		}
 
 		// merge base session env with window env, window env takes priority on collisions
-		env := maps.Clone(session.Env)
+		env := maps.Clone(session.Config.Env)
 		maps.Copy(env, window.Env)
 
 		for key, val := range env {

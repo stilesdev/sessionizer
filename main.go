@@ -104,12 +104,16 @@ func main() {
 				} else {
 					// session does not exist, create it now
 					tmuxSession = tmux.TmuxSession{
-						Name:    sessions[selectedIndex].Name,
-						Path:    sessions[selectedIndex].Path,
-						Env:     sessions[selectedIndex].Env,
-						Command: sessions[selectedIndex].Command,
-						Split:   sessions[selectedIndex].Split,
-						Windows: sessions[selectedIndex].Windows,
+						Name: sessions[selectedIndex].Name,
+						Path: sessions[selectedIndex].Path,
+						Config: config.Session{
+							Path:    sessions[selectedIndex].Path,
+							Env:     sessions[selectedIndex].Env,
+							Command: sessions[selectedIndex].Command,
+							Split:   sessions[selectedIndex].Split,
+							Windows: sessions[selectedIndex].Windows,
+						},
+						Attached: false,
 					}
 
 					tmux.CreateNewSession(tmuxSession)

@@ -22,8 +22,8 @@ type Session struct {
 	IsAttached bool
 	Env        map[string]string
 	Command    string
-	Split      tmux.PaneSplit
-	Windows    []tmux.TmuxWindow
+	Split      config.PaneSplit
+	Windows    []config.Window
 }
 
 func NewSessionList(existingTmuxSessions []tmux.TmuxSession, conf config.Config, sessionOverride string) (sessions []Session, err error) {

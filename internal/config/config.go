@@ -6,7 +6,6 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/adrg/xdg"
 	"github.com/stilesdev/sessionizer/internal/log"
-	"github.com/stilesdev/sessionizer/internal/tmux"
 )
 
 type Config struct {
@@ -23,8 +22,21 @@ type Session struct {
 	Paths   []string
 	Env     map[string]string
 	Command string
-	Split   tmux.PaneSplit
-	Windows []tmux.TmuxWindow
+	Split   PaneSplit
+	Windows []Window
+}
+
+type PaneSplit struct {
+	Direction string
+	Size      string
+	Command   string
+	Path      string
+}
+
+type Window struct {
+	Path    string
+	Env     map[string]string
+	Command string
 }
 
 func GetDefaultConfigFile() (string, error) {

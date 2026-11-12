@@ -29,8 +29,9 @@ type Session struct {
 type PaneSplit struct {
 	Direction string
 	Size      string
-	Command   string
 	Path      string
+	Env       map[string]string
+	Command   string
 }
 
 type Window struct {

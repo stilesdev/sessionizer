@@ -89,7 +89,11 @@ func createNewSession(session session.Session) error {
 			"-c", path,
 		}
 
-		for key, val := range session.Config.Env {
+		// merge base session env with split env, split env takes priority on collisions
+		env := maps.Clone(session.Config.Env)
+		maps.Copy(env, session.Config.Split.Env)
+
+		for key, val := range env {
 			args = append(args, "-e", fmt.Sprintf("%s=%s", key, val))
 		}
 

@@ -63,7 +63,7 @@ func main() {
 				return err
 			}
 
-			sessions, err := session.MergeSessionLists(existingSessions, conf, sessionOverride)
+			sessions := session.BuildSessionList(conf, existingSessions, sessionOverride)
 
 			var selectedIndex int
 			var enteredQuery string

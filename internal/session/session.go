@@ -36,59 +36,50 @@ func (s Session) FzfEntry() string {
 	return path
 }
 
-func MergeSessionLists(existingSessions []Session, conf config.Config, sessionOverride string) (sessions []Session, err error) {
-	for _, sessionConfig := range conf.Sessions {
-		var allPaths []string
-		if sessionConfig.Path != "" {
-			allPaths = append(allPaths, sessionConfig.Path)
-		}
-		allPaths = append(allPaths, sessionConfig.Paths...)
+func newSessionFromConfig(conf config.Session, path string) Session {
+	session := Session{
+		Name:   filepath.Base(path),
+		Path:   path,
+		Config: conf.SessionConfig,
+	}
 
-		for _, glob := range allPaths {
-			for _, path := range parseGlobToPaths(glob) {
-				session := parseSession(path, sessionConfig, existingSessions)
-				if !session.IsAttached || !conf.Tmux.HideAttachedSessions || sessionOverride != "" {
-					if found, index := findSessionIndex(session, sessions); found {
-						sessions[index] = session
-					} else {
-						sessions = append(sessions, session)
-					}
-				}
-			}
+	for key, val := range session.Config.Env {
+		session.Config.Env[key] = expandHome(val)
+	}
+
+	if session.Config.Split.Path != "" {
+		session.Config.Split.Path = expandHome(session.Config.Split.Path)
+	}
+
+	for key, val := range session.Config.Split.Env {
+		session.Config.Split.Env[key] = expandHome(val)
+	}
+
+	for i, window := range session.Config.Windows {
+		if window.Path != "" {
+			session.Config.Windows[i].Path = expandHome(window.Path)
+		}
+		for key, val := range window.Env {
+			session.Config.Windows[i].Env[key] = expandHome(val)
 		}
 	}
 
-	// look for any scratch sessions - existing sessions in tmux but not associated with any paths from config file
-	for _, existingSession := range existingSessions {
-		excludeSession := false
+	return session
+}
 
-		// exclude if attached and configured to hide attached sessions
-		if (conf.Tmux.HideAttachedSessions && existingSession.IsAttached) || sessionOverride != "" {
-			excludeSession = true
-		}
+func BuildSessionList(conf config.Config, existingSessions []Session, sessionOverride string) []Session {
+	sessions := parseConfigSessions(conf.Sessions)
 
-		// exclude if already included via paths - only looking for scratch sessions here
-		for _, session := range sessions {
-			if existingSession.Name == session.Name && existingSession.Path == session.Path {
-				excludeSession = true
-				break
-			}
-		}
+	sessions = mergeExistingSessions(sessions, existingSessions)
 
-		if !excludeSession {
-			sessions = append(sessions, Session{
-				Name:       existingSession.Name,
-				Path:       existingSession.Path,
-				Exists:     true,
-				IsAttached: existingSession.IsAttached,
-				IsScratch:  true,
-			})
-		}
+	// sessionOverride bypasses the HideAttachedSessions config here so it only hides attached sessions when showing the fzf interface.
+	if conf.Tmux.HideAttachedSessions && sessionOverride == "" {
+		sessions = filterAttachedSessions(sessions)
 	}
 
 	sortSessions(&sessions)
 
-	return sessions, nil
+	return sessions
 }
 
 func expandHome(path string) string {
@@ -135,36 +126,51 @@ func findSessionIndex(target Session, sessions []Session) (bool, int) {
 	return false, 0
 }
 
-func parseSession(path string, sessionConfig config.Session, existingSessions []Session) Session {
-	session := Session{
-		Name:   filepath.Base(path),
-		Path:   path,
-		Config: sessionConfig.SessionConfig,
-	}
+func parseConfigSessions(configSessions []config.Session) (sessions []Session) {
+	for _, sessionConfig := range configSessions {
+		var allPaths []string
+		if sessionConfig.Path != "" {
+			allPaths = append(allPaths, sessionConfig.Path)
+		}
+		allPaths = append(allPaths, sessionConfig.Paths...)
 
-	for key, val := range session.Config.Env {
-		session.Config.Env[key] = expandHome(val)
-	}
+		for _, glob := range allPaths {
+			for _, path := range parseGlobToPaths(glob) {
+				session := newSessionFromConfig(sessionConfig, path)
 
-	for _, existingSession := range existingSessions {
-		if existingSession.Path == path && existingSession.Name == session.Name {
-			session.Exists = true
-			session.IsAttached = existingSession.IsAttached
-			break
+				// if multiple sessions match the same path, use the last one in the config so later sections override earlier ones
+				if found, index := findSessionIndex(session, sessions); found {
+					sessions[index] = session
+				} else {
+					sessions = append(sessions, session)
+				}
+			}
 		}
 	}
 
-	if session.Config.Split.Path != "" {
-		session.Config.Split.Path = expandHome(session.Config.Split.Path)
-	}
+	return sessions
+}
 
-	for i, window := range session.Config.Windows {
-		if window.Path != "" {
-			session.Config.Windows[i].Path = expandHome(window.Path)
+func mergeExistingSessions(configSessions []Session, existingSessions []Session) []Session {
+	merged := configSessions
+
+	for _, existing := range existingSessions {
+		if found, index := findSessionIndex(existing, merged); found {
+			merged[index].Exists = true
+			merged[index].IsAttached = existing.IsAttached
+		} else {
+			existing.IsScratch = true
+			merged = append(merged, existing)
 		}
 	}
 
-	return session
+	return merged
+}
+
+func filterAttachedSessions(sessions []Session) []Session {
+	return slices.DeleteFunc(sessions, func(s Session) bool {
+		return s.IsAttached
+	})
 }
 
 func sortSessions(sessions *[]Session) {

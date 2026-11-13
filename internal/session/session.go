@@ -14,10 +14,11 @@ import (
 
 type Session struct {
 	Name       string
+	Path       string
 	Exists     bool
 	IsScratch  bool
 	IsAttached bool
-	Config     config.Session
+	Config     config.SessionConfig
 }
 
 func (s Session) FzfEntry() string {
@@ -26,7 +27,7 @@ func (s Session) FzfEntry() string {
 		return fmt.Sprintf("scratch: %s", s.Name)
 	}
 
-	path := unexpandHome(s.Config.Path)
+	path := unexpandHome(s.Path)
 
 	if s.Exists {
 		return fmt.Sprintf("tmux: %s [%s]", s.Name, path)
@@ -37,29 +38,20 @@ func (s Session) FzfEntry() string {
 
 func MergeSessionLists(existingSessions []Session, conf config.Config, sessionOverride string) (sessions []Session, err error) {
 	for _, sessionConfig := range conf.Sessions {
+		var allPaths []string
 		if sessionConfig.Path != "" {
-			for _, path := range parseGlobToPaths(sessionConfig.Path) {
+			allPaths = append(allPaths, sessionConfig.Path)
+		}
+		allPaths = append(allPaths, sessionConfig.Paths...)
+
+		for _, glob := range allPaths {
+			for _, path := range parseGlobToPaths(glob) {
 				session := parseSession(path, sessionConfig, existingSessions)
 				if !session.IsAttached || !conf.Tmux.HideAttachedSessions || sessionOverride != "" {
 					if found, index := findSessionIndex(session, sessions); found {
 						sessions[index] = session
 					} else {
 						sessions = append(sessions, session)
-					}
-				}
-			}
-		}
-
-		if len(sessionConfig.Paths) > 0 {
-			for _, glob := range sessionConfig.Paths {
-				for _, path := range parseGlobToPaths(glob) {
-					session := parseSession(path, sessionConfig, existingSessions)
-					if !session.IsAttached || !conf.Tmux.HideAttachedSessions || sessionOverride != "" {
-						if found, index := findSessionIndex(session, sessions); found {
-							sessions[index] = session
-						} else {
-							sessions = append(sessions, session)
-						}
 					}
 				}
 			}
@@ -77,7 +69,7 @@ func MergeSessionLists(existingSessions []Session, conf config.Config, sessionOv
 
 		// exclude if already included via paths - only looking for scratch sessions here
 		for _, session := range sessions {
-			if existingSession.Name == session.Name && existingSession.Config.Path == session.Config.Path {
+			if existingSession.Name == session.Name && existingSession.Path == session.Path {
 				excludeSession = true
 				break
 			}
@@ -86,12 +78,10 @@ func MergeSessionLists(existingSessions []Session, conf config.Config, sessionOv
 		if !excludeSession {
 			sessions = append(sessions, Session{
 				Name:       existingSession.Name,
+				Path:       existingSession.Path,
 				Exists:     true,
 				IsAttached: existingSession.IsAttached,
 				IsScratch:  true,
-				Config: config.Session{
-					Path: existingSession.Config.Path,
-				},
 			})
 		}
 	}
@@ -137,7 +127,7 @@ func parseGlobToPaths(glob string) []string {
 
 func findSessionIndex(target Session, sessions []Session) (bool, int) {
 	for index, session := range sessions {
-		if session.Config.Path == target.Config.Path {
+		if session.Path == target.Path {
 			return true, index
 		}
 	}
@@ -148,16 +138,16 @@ func findSessionIndex(target Session, sessions []Session) (bool, int) {
 func parseSession(path string, sessionConfig config.Session, existingSessions []Session) Session {
 	session := Session{
 		Name:   filepath.Base(path),
-		Config: sessionConfig,
+		Path:   path,
+		Config: sessionConfig.SessionConfig,
 	}
-	session.Config.Path = path
 
 	for key, val := range session.Config.Env {
 		session.Config.Env[key] = expandHome(val)
 	}
 
 	for _, existingSession := range existingSessions {
-		if existingSession.Config.Path == path && existingSession.Name == session.Name {
+		if existingSession.Path == path && existingSession.Name == session.Name {
 			session.Exists = true
 			session.IsAttached = existingSession.IsAttached
 			break

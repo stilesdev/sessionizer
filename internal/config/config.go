@@ -17,13 +17,17 @@ type Tmux struct {
 	HideAttachedSessions bool
 }
 
-type Session struct {
-	Path    string
-	Paths   []string
+type SessionConfig struct {
 	Env     map[string]string
 	Command string
 	Split   PaneSplit
 	Windows []Window
+}
+
+type Session struct {
+	Path  string
+	Paths []string
+	SessionConfig
 }
 
 type PaneSplit struct {

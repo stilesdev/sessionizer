@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/stilesdev/sessionizer/internal/config"
 	"github.com/stilesdev/sessionizer/internal/session"
 )
 
@@ -47,7 +46,7 @@ func createNewSession(session session.Session) error {
 		"new-session",
 		"-d",
 		"-s", session.Name,
-		"-c", session.Config.Path,
+		"-c", session.Path,
 	}
 
 	for key, val := range session.Config.Env {
@@ -76,7 +75,7 @@ func createNewSession(session session.Session) error {
 			return errors.New("Invalid split direction")
 		}
 
-		path := session.Config.Path
+		path := session.Path
 		if session.Config.Split.Path != "" {
 			path = session.Config.Split.Path
 		}
@@ -116,7 +115,7 @@ func createNewSession(session session.Session) error {
 	}
 
 	for i, window := range session.Config.Windows {
-		path := session.Config.Path
+		path := session.Path
 		if window.Path != "" {
 			path = window.Path
 		}
@@ -201,10 +200,9 @@ func ListExistingSessions() ([]session.Session, error) {
 		if len(split) == 3 {
 			existingSessions = append(existingSessions, session.Session{
 				Name:       split[0],
+				Path:       split[1],
 				IsAttached: split[2] == "1",
-				Config: config.Session{
-					Path: split[1],
-				},
+				Exists:     true,
 			})
 		}
 	}

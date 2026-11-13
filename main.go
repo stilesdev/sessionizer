@@ -84,7 +84,7 @@ func main() {
 				}
 			} else {
 				for index, session := range sessions {
-					if session.Name == sessionOverride || session.Config.Path == sessionOverride {
+					if session.Name == sessionOverride || session.Path == sessionOverride {
 						selectedIndex = index
 						break
 					}
@@ -100,12 +100,10 @@ func main() {
 				// no selection, create scratch
 				targetSession = session.Session{
 					Name:       enteredQuery,
+					Path:       xdg.Home,
 					Exists:     false,
 					IsAttached: false,
 					IsScratch:  true,
-					Config: config.Session{
-						Path: xdg.Home,
-					},
 				}
 			} else {
 				log.Debug("no session selected and no query returned from fzf")

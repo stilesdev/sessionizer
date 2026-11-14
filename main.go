@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/adrg/xdg"
 	"github.com/stilesdev/sessionizer/internal/config"
 	"github.com/stilesdev/sessionizer/internal/fzf"
 	"github.com/stilesdev/sessionizer/internal/log"
@@ -65,52 +64,27 @@ func main() {
 
 			sessions := session.BuildSessionList(conf, existingSessions, sessionOverride)
 
-			var selectedIndex int
-			var enteredQuery string
+			var selected session.Session
 
-			if sessionOverride == "" {
-				fzfEntries := make([]string, len(sessions))
-				for idx, session := range sessions {
-					fzfEntries[idx] = session.FzfEntry()
-				}
+			if sessionOverride != "" {
+				selected, err = session.SelectFromOverride(sessions, sessionOverride)
+			} else {
+				selected, err = session.SelectFromFzfPrompt(sessions)
+			}
 
-				selectedIndex, _, enteredQuery, err = fzf.Prompt(fzfEntries)
-				if err != nil {
-					return err
-				} else if selectedIndex < 0 && enteredQuery == "" {
+			if err != nil {
+				if errors.Is(err, session.AbortedError) {
 					// not an error, but no valid selection made
-					log.Debug("user exited")
+					log.Debug(err)
 					return nil
 				}
-			} else {
-				for index, session := range sessions {
-					if session.Name == sessionOverride || session.Path == sessionOverride {
-						selectedIndex = index
-						break
-					}
-				}
+
+				return err
 			}
 
-			var targetSession session.Session
-			if selectedIndex >= 0 {
-				log.Debug(fmt.Sprintf("Selected: %#v", sessions[selectedIndex]))
-				// use selected session
-				targetSession = sessions[selectedIndex]
-			} else if enteredQuery != "" {
-				// no selection, create scratch
-				targetSession = session.Session{
-					Name:       enteredQuery,
-					Path:       xdg.Home,
-					Exists:     false,
-					IsAttached: false,
-					IsScratch:  true,
-				}
-			} else {
-				log.Debug("no session selected and no query returned from fzf")
-				return nil
-			}
+			log.Debug(fmt.Sprintf("Selected: %#v", selected))
 
-			return tmux.ActivateSession(targetSession)
+			return tmux.ActivateSession(selected)
 		},
 	}
 
